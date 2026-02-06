@@ -3,10 +3,10 @@ import h5py
 import numpy as np
 from PIL import Image
 
-EPISODE = "episode_5"
-MAIN_PATH = "/home/legion/ROS/kinova_ws/" + EPISODE
-CSV_PATH = MAIN_PATH + "/test.csv"
-HDF5_PATH = MAIN_PATH + "/" + EPISODE + ".hdf5"
+EPISODE = "AAA_SF_3"
+MAIN_PATH = "/home/legion/ROS/kinova_ws/AORTE/" + EPISODE + "/"
+CSV_PATH = MAIN_PATH + EPISODE + ".csv"
+HDF5_PATH = MAIN_PATH + EPISODE + ".hdf5"
 SIM_VALUE = True  # attributo 'sim'
 
 N = 400
