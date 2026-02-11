@@ -44,15 +44,15 @@ def preprocess_frame(frame_bgr):
 
     return frame.unsqueeze(0)  # [1,C,H,W]
 
-
-qpos = np.array([6.084512,0.608651,3.264462,4.638094,1.374158,4.659789,1.450143], dtype=np.float32)
-qpos_mean = np.array([4.8130064,0.5339598,3.654964,4.828108,5.9639034,5.0821977,0.77539736], dtype=np.float32) # [5.8461685, 0.49221334, 3.445083, 4.3707814, 1.298483, 4.7341285, 2.8364038 ]
-qpos_std = np.array([2.3753033, 0.04092122, 0.08526142, 0.06549811, 0.05416868, 0.07302527, 1.5790035], dtype=np.float32) # [0.69456846, 0.19835953, 0.3600296,  0.43290123, 0.15821493, 0.42179197, 1.9556911]
+dataset_stats = get_norm_stats("/home/legion/PycharmProjects/ACT/ACT_refactor/data/liralab/AAA/")
+qpos = np.array([6.068143,0.302217,3.518075,4.509130,6.180255,5.217368,0.240442], dtype=np.float32)
+qpos_mean = np.array(dataset_stats['qpos_mean'], dtype=np.float32)
+qpos_std = np.array(dataset_stats['qpos_std'], dtype=np.float32)
 qpos = (qpos - qpos_mean) / qpos_std
 qpos = torch.from_numpy(qpos).unsqueeze(0).to(device)  # [1,7]
 
 """
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(1)
 
 with torch.no_grad():
     while True:
@@ -101,10 +101,14 @@ robot = rtb.models.KinovaGen3()
 #robot.plot(qt.q, backend='pyplot', movie='panda1.gif')
 
 
-"""
-frame = cv2.imread("/home/legion/ROS/kinova_ws/AORTE/AAA_JR_2/image/img_19.png")
+"""s
+# ----------- ----------------------------------------------------- --------------
+# ----------- PRINTA LA TRAIETTORIA PREDETTA A PARTIRE DA UNO STATO --------------
+# ----------- ----------------------------------------------------- --------------
+
+frame = cv2.imread("/home/legion/ROS/kinova_ws/AORTE/AAA_MR_1/image/img_0.png")
 frame = preprocess_frame(np.array(frame)).to(device)
-qpos = np.array([6.152566,0.582920,3.469089,4.874872,6.048434,5.111913,0.191963], dtype=np.float32)
+qpos = np.array([6.068143,0.302217,3.518075,4.509130,6.180255,5.217368,0.240442], dtype=np.float32)
 qpos = (qpos - qpos_mean) / qpos_std
 qpos = torch.from_numpy(qpos).unsqueeze(0).to(device) 
 
@@ -113,18 +117,21 @@ Q = Q.cpu().detach().numpy() * qpos_std + qpos_mean
 
 from scipy.signal import savgol_filter
 Q = savgol_filter(Q, window_length=11, polyorder=3, axis=0)
+robot.plot(Q, backend='pyplot')
 """
-
-next_q = np.array([6.148965,0.510703,3.463927,4.854856,6.059612,5.081814,0.195318], dtype=np.float32)
-next_q = (next_q - qpos_mean) / qpos_std
+# ----------- ------------------------------------------------------------------------------------------------ --------------
+# ----------- PRINTA LE TRAIETTORIE PRENDENDO COME INPUT LO STATO PREDETTO E L'IMMAGINE SUCCESSIVA DEL DATASET --------------
+# ----------- ----------------------------------------------------- ------------------------------------------ --------------
+qpos = np.array([6.068143,0.302217,3.518075,4.509130,6.180255,5.217368,0.240442], dtype=np.float32)
+next_q = (qpos - qpos_mean) / qpos_std
 next_q = torch.from_numpy(next_q).unsqueeze(0).to(device)
 Q = np.empty((0,7))
 Q = np.vstack((Q,next_q.cpu().detach().numpy() * qpos_std + qpos_mean))
 i = 0
-for img in os.listdir("/home/legion/ROS/kinova_ws/AORTE/AAA_SF_1/image/"):
+for img in os.listdir("/home/legion/ROS/kinova_ws/AORTE/AAA_MR_1/image/"):
     i += 1
     if i % 20 == 0: print(i)
-    frame = cv2.imread("/home/legion/ROS/kinova_ws/AORTE/AAA_SF_1/image/" + img)
+    frame = cv2.imread("/home/legion/ROS/kinova_ws/AORTE/AAA_MR_1/image/" + img)
     frame = preprocess_frame(np.array(frame)).to(device)
     out = policy(next_q, frame)
     Q = np.vstack((Q,out.cpu().squeeze()[0].detach().numpy()  * qpos_std + qpos_mean))
@@ -134,6 +141,7 @@ for img in os.listdir("/home/legion/ROS/kinova_ws/AORTE/AAA_SF_1/image/"):
 from scipy.signal import savgol_filter
 Q = savgol_filter(Q, window_length=11, polyorder=3, axis=0)
 robot.plot(Q, backend='pyplot')
+
 
 """
 # ----------- PRINTA LA TRAIETTORIA DAL FILE CSV --------------

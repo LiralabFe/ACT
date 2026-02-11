@@ -52,8 +52,9 @@ args = {
     'lr': 1e-5,
     'kl_weight': 10,
     'state_dim': 7,
+    'action_dim':7,
     'num_episodes': 6,
-    'episode_len': 400,
+    'episode_len': 600,
     'camera_names': ['top'],
     'num_encoder_layers': 4,
     'num_decoder_layers': 7,
@@ -66,6 +67,39 @@ args = {
     'fps': 10,
     'latent_dim': 32,
 }
+
+def get_norm_stats(dataset_dir : str):
+    dataset_dir = Path(dataset_dir)
+    hdf5_files = list(dataset_dir.glob("*.hdf5"))
+    all_qpos_data = []
+    all_action_data = []
+    for episode_path in hdf5_files:
+        # dataset_path = os.path.join(dataset_dir, f'episode_{episode_idx}.hdf5')
+        with h5py.File(episode_path, 'r') as root:
+            qpos = root['/observations/qpos'][()]
+            qvel = root['/observations/qvel'][()]
+            action = root['/action'][()]
+        all_qpos_data.append(torch.from_numpy(qpos))
+        all_action_data.append(torch.from_numpy(action))
+    all_qpos_data = torch.stack(all_qpos_data)
+    all_action_data = torch.stack(all_action_data)
+    all_action_data = all_action_data
+
+    # normalize action data
+    action_mean = all_action_data.mean(dim=[0, 1], keepdim=True)
+    action_std = all_action_data.std(dim=[0, 1], keepdim=True)
+    action_std = torch.clip(action_std, 1e-2, np.inf) # clipping
+
+    # normalize qpos data
+    qpos_mean = all_qpos_data.mean(dim=[0, 1], keepdim=True)
+    qpos_std = all_qpos_data.std(dim=[0, 1], keepdim=True)
+    qpos_std = torch.clip(qpos_std, 1e-2, np.inf) # clipping
+
+    stats = {"action_mean": action_mean.numpy().squeeze(), "action_std": action_std.numpy().squeeze(),
+             "qpos_mean": qpos_mean.numpy().squeeze(), "qpos_std": qpos_std.numpy().squeeze(),
+             "example_qpos": qpos}
+
+    return stats
 
 class Backbone(nn.Module):
     """ResNet backbone with frozen BatchNorm."""
@@ -86,7 +120,6 @@ class Backbone(nn.Module):
         x = self.backbone(x)
         pos_embs = self.position_embedding(NestedTensor(x, torch.ones_like(x[0, [0]], dtype=torch.int8)))
         return NestedTensor(x, pos_embs)
-
 
 def kl_divergence(mu, logvar):
     batch_size = mu.size(0)
@@ -246,7 +279,6 @@ class cvaeDecoderInputCollator(DeviceAwareModule):
         return src, pos, queries
     
 class cvaeDecoder(Transformer):
-
     def __init__(self):
         
         arg_for_transformer = [
@@ -257,7 +289,7 @@ class cvaeDecoder(Transformer):
 
         vision_backbone = Backbone(args['backbone'])
         self.cvae_decoder_input_collector = cvaeDecoderInputCollator(vision_backbone)
-        self.action_head = nn.Linear(args['d_model'], args['state_dim'])
+        self.action_head = nn.Linear(args['d_model'], args['action_dim'])
 
     def forward(self, latent_sample, images, qpos):
         src, pos, queries = self.cvae_decoder_input_collector(latent_sample, images, qpos)
