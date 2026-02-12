@@ -4,7 +4,9 @@ import tensorflow as tf
 from tensorflow import keras
 import matplotlib.pyplot as plt
 import os
+import time
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
 
 def iou_score(y_true, y_pred, smooth=1e-6):
     y_true = tf.cast(y_true, tf.float32)
@@ -82,18 +84,19 @@ for image_path in os.listdir(PATH):
     mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
 
     # **DEBUG: Mostra la maschera grezza**
-    cv2.imshow("Raw Mask Prediction", mask * 255)
+    #cv2.imshow("Raw Mask Prediction", mask * 255)
 
     # Overlay con colore rosso per la maschera
     mask_color = np.repeat(mask[:, :, np.newaxis], 3, axis=2) * color
     overlay = cv2.addWeighted(ori_frame, 0.8, mask_color, 0.2, 0)
 
-    cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
-    print(f"Saved mask_{image_path} in {SAVE_PATH}")
+    #cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
+    #print(f"Saved mask_{image_path} in {SAVE_PATH}")
     # Mostra il risultato finale
-    cv2.imshow("Model Output View", overlay)
+    #cv2.imshow("Model Output View", overlay)
 
     # Premi "Invio" per uscire
+    print(time.time())
     if cv2.waitKey(1) & 0xFF == 13:
         break
 

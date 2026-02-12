@@ -9,6 +9,8 @@ import numpy as np
 import socket
 import struct
 from liralab_socket import LiralabSocket
+from scipy.spatial.transform import Rotation as R
+
 # --------- NEURAL NETWORK
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 policy = ACTPolicy()
@@ -39,10 +41,43 @@ def preprocess_frame(frame_bgr):
 
     return frame.unsqueeze(0)  # [1,C,H,W]
 
+def get_tran_from_state(state):
+    return np.array([
+    [state[3],state[4],state[5],state[0]],
+    [state[6],state[7],state[8],state[1]],
+    [state[9],state[10],state[11],state[2]],
+    [0,0,0,1]
+    ], dtype=np.float32)
 
 # ------------- MAIN
 liralabSocket = LiralabSocket(5000)
-# Read from socket
+
+# Register init pose
+state = liralabSocket.read().split(';')[:-1]
+T_belly_0 = get_tran_from_state(state)
+T_0_belly = np.linalg.inv(T_belly_0)
+liralabSocket.write("RUN")
+
+
+while(True):
+    # Read from socket
+    state = liralabSocket.read().split(';')[:-1]
+    T_curr_0 = get_tran_from_state(state)
+    T_curr_belly = np.dot(T_0_belly, T_curr_0)
+    
+    rpy = R.from_matrix(T_curr_belly[:3,:3]).as_euler('xyz').astype(np.float32)
+    ee_pose_belly = np.concatenate([T_curr_belly[:3,3], rpy])
+
+    # ------------------------------------------------------------------
+    # TODO: Normalize ee_pose_belly with training dataset stats !!!!!! -
+    # ------------------------------------------------------------------
+
+    
+
+    # ------------------------------------------------------------------
+    # TODO: Denormalize ee_pose_belly with training dataset stats !!!!!! -
+    # ------------------------------------------------------------------
+
 # Capture camera frame
 # inference: Segment frame and append channel
 # Preprocess frame
