@@ -8,7 +8,7 @@ import roboticstoolbox as rtb
 import numpy as np
 import socket
 import struct
-
+from liralab_socket import LiralabSocket
 # --------- NEURAL NETWORK
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 policy = ACTPolicy()
@@ -40,45 +40,12 @@ def preprocess_frame(frame_bgr):
     return frame.unsqueeze(0)  # [1,C,H,W]
 
 
-
-# --------- SOCKET
-HOST = "localhost"
-PORT = 5000
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.bind((HOST, PORT))
-sock.listen(1)
-
-#print("In attesa di connessione...")
-conn, addr = sock.accept()
-print("Connesso da", addr)
-
-# wrapper file-like (gestisce \n)
-conn_file = conn.makefile("rwb")
-cap = cv2.VideoCapture(2)
-ret, frame = cap.read()
-
-try:
-    while True:
-        data = conn.recv(28)  # 7 float32 = 28 byte
-        if not data: break
-
-        line = conn_file.readline()
-        if not line: break
-
-        qpos_str = line.decode().strip()
-        qpos = [float(x) for x in qpos_str.split(";")]
-        qpos = np.array([1,1,1,1,1,1,1], dtype=np.float32)
-        qpos = (qpos - qpos_mean) / qpos_std
-        qpos = torch.from_numpy(qpos).unsqueeze(0).to(device)  # [1,7]
-
-        _, frame = cap.read()
-        
-        image_data = preprocess_frame(frame).to(device)
-        output = policy(qpos,image_data)
-
-
-
-
-finally:
-    conn.close()
-    sock.close()
+# ------------- MAIN
+liralabSocket = LiralabSocket(5000)
+# Read from socket
+# Capture camera frame
+# inference: Segment frame and append channel
+# Preprocess frame
+# inference: ACT with [frame,x,y,z,roll,pitch,yaw]
+# new_action -> transform from belly to world -> x,y,z,roll,pitch,yaw
+# write socket
