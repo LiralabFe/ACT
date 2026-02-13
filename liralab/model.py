@@ -38,12 +38,12 @@ from torch import nn, Tensor
 from aim import Run
 
 args = {
-    'num_epochs': 6000,
+    'num_epochs': 4500,
     'eval_interval_epochs': 500,
     'num_eval_rollouts': 100,
     'lr_backbone': 1e-5,
     'batch_size': 8,
-    'trained_model_dir': 'experiments/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
+    'trained_model_dir': 'experiments/AAA/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
     'task_name': 'sim_transfer_cube_scripted',
     'dataset_dir': 'data/liralab/', # '../data/aloha/sim_transfer_cube_scripted',
     'chunk_size': 100,  # chunk_size is --> num_queries <-- !!!!
@@ -51,9 +51,9 @@ args = {
     'dim_feedforward': 3200,
     'lr': 1e-5,
     'kl_weight': 10,
-    'state_dim': 7,
-    'action_dim':7,
-    'num_episodes': 6,
+    'state_dim': 6,
+    'action_dim': 6,
+    'num_episodes': 2,
     'episode_len': 600,
     'camera_names': ['top'],
     'num_encoder_layers': 4,
@@ -121,6 +121,7 @@ class Backbone(nn.Module):
         pos_embs = self.position_embedding(NestedTensor(x, torch.ones_like(x[0, [0]], dtype=torch.int8)))
         return NestedTensor(x, pos_embs)
 
+
 def kl_divergence(mu, logvar):
     batch_size = mu.size(0)
     assert batch_size != 0
@@ -173,8 +174,8 @@ class cvaeEncoderInputCollator(DeviceAwareModule):
     def __init__(self):
         super().__init__()
         self.cls_token = nn.Parameter(torch.randn(1, args['d_model']))
-        self.action_proj = nn.Linear(7, args['d_model'])
-        self.qpos_proj = nn.Linear(7, args['d_model'])
+        self.action_proj = nn.Linear(args['action_dim'], args['d_model'])
+        self.qpos_proj = nn.Linear(args['state_dim'], args['d_model'])
         self.pos_encoding = self.register_buffer('pos_encoding', sinusoid_encoding_table())
           
     def forward(self, actions, qpos, is_pad):
@@ -229,7 +230,7 @@ class LatentDistributionSampler(DeviceAwareModule):
             latent_sample = torch.zeros([1, args['latent_dim']], dtype=torch.float32, device=self.device)
             mu, logvar = 0, 0
         return latent_sample, [mu, logvar]
-    
+
 class cvaeDecoderInputCollator(DeviceAwareModule):
     '''
     Provides:
@@ -239,7 +240,7 @@ class cvaeDecoderInputCollator(DeviceAwareModule):
         super().__init__()
         self.latent_out_proj = nn.Linear(args['latent_dim'], args['d_model'])  # project latent sample to d_model
         self.proprio_and_latent_pos = nn.Parameter(torch.randn(2, args['d_model']))
-        self.robot_state_proj = nn.Linear(7, args['d_model'])  # project state/proprio features to d_model
+        self.robot_state_proj = nn.Linear(args['state_dim'], args['d_model'])  # project state/proprio features to d_model
         self.queries = nn.Parameter(torch.randn(args['chunk_size'], args['d_model']))
         
         self.vision_backbone = vision_backbone
@@ -296,7 +297,7 @@ class cvaeDecoder(Transformer):
         hs = super().forward(src, pos, queries)  # hidden state from the last layer of the decoder stack
         a_hat = self.action_head(hs)
         return a_hat
-    
+
 def sample_from_normal_distribution(mu, logvar):
     std = logvar.div(2).exp()
     eps = std.new(std.size()).normal_()
@@ -315,7 +316,7 @@ class DETRVAE(nn.Module):
         Dimensionalities:
           qpos: batch_size, state_dim
           image: batch_size, channel, height, width
-          actions: batch_size, chunk_size, state_dim
+          actions: batch_size, chunk_size, action_dim
         """
         if actions is not None:  # training
             style_variable_z = self.cvaeEncoder(actions, qpos, is_pad)    
@@ -325,7 +326,7 @@ class DETRVAE(nn.Module):
             
         a_hat = self.cvaeDecoder(latent_sample, images, qpos).squeeze(0)
         return a_hat, [mu, logvar]
-    
+
 class ACTPolicy(nn.Module):
     def __init__(self):
         super().__init__()
@@ -345,3 +346,4 @@ class ACTPolicy(nn.Module):
         else: # inference time
             a_hat, (_, _) = self.model(qpos, image) # no action, sample from prior
             return a_hat
+    

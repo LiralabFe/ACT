@@ -11,8 +11,8 @@ HDF5_PATH = MAIN_PATH + EPISODE + ".hdf5"
 SIM_VALUE = True  # attributo 'sim'
 
 N = 600
-IMG_H = 480
-IMG_W = 640
+IMG_H = 256 # 480
+IMG_W = 256 # 640
 IMG_C = 3
 
 # Allocazione array

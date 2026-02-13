@@ -25,8 +25,8 @@ normalize = transforms.Normalize(
     std=[0.229, 0.224, 0.225]
 )
 
-IMG_H = 480
-IMG_W = 640
+IMG_H = 256 # 480
+IMG_W = 256 # 640
 
 def preprocess_frame(frame_bgr):
     # BGR -> RGB
