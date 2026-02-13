@@ -51,7 +51,7 @@ args = {
     'dim_feedforward': 3200,
     'lr': 1e-5,
     'kl_weight': 10,
-    'state_dim': 7,
+    'state_dim': 6,
     'action_dim': 6,
     'num_episodes': 2,
     'episode_len': 600,
