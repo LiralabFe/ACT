@@ -45,13 +45,13 @@ args = {
     'batch_size': 8,
     'trained_model_dir': 'experiments/AAA/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
     'task_name': 'sim_transfer_cube_scripted',
-    'dataset_dir': 'data/liralab/', # '../data/aloha/sim_transfer_cube_scripted',
+    'dataset_dir': 'data/liralab/AAA/', # '../data/aloha/sim_transfer_cube_scripted',
     'chunk_size': 100,  # chunk_size is --> num_queries <-- !!!!
     'd_model': 512,  # d_model
     'dim_feedforward': 3200,
     'lr': 1e-5,
     'kl_weight': 10,
-    'state_dim': 6,
+    'state_dim': 7,
     'action_dim': 6,
     'num_episodes': 2,
     'episode_len': 600,
