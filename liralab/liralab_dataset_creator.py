@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 from scipy.spatial.transform import Rotation as R
 
-EPISODE = "AAA_SF_1"
+EPISODE = "AAA_AP_1"
 MAIN_PATH = "/home/legion/ROS/kinova_ws/AORTE/" + EPISODE + "/"
 CSV_PATH = MAIN_PATH + EPISODE + ".csv"
 HDF5_PATH = MAIN_PATH + EPISODE + ".hdf5"

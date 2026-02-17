@@ -10,6 +10,7 @@ import socket
 import struct
 import tensorflow as tf
 from tensorflow import keras
+import time
 from liralab.liralab_socket import LiralabSocket
 from scipy.spatial.transform import Rotation as R
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
@@ -18,7 +19,7 @@ os.environ["TF_USE_LEGACY_KERAS"] = "1"
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 policy = ACTPolicy()
 policy.cuda()
-# policy.load_state_dict(torch.load("experiments/AAA/policy_epoch_1000.ckpt"))
+policy.load_state_dict(torch.load("experiments/AAA/policy_last.ckpt"))
 device = "cuda" if torch.cuda.is_available() else "cpu"
 policy.eval()
 
@@ -26,8 +27,8 @@ policy.eval()
 IMG_H = 256 # 480
 IMG_W = 256 # 640
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],    std=[0.229, 0.224, 0.225])
-qpos_mean = np.array([5.8461685, 0.49221334, 3.445083, 4.3707814, 1.298483, 4.7341285], dtype=np.float32)
-qpos_std = np.array([0.69456846, 0.19835953, 0.3600296,  0.43290123, 0.15821493, 0.42179197], dtype=np.float32)
+qpos_mean = np.array([0.00368241, -0.0334186, 0.02010795, 0.00242248, -0.01360511, -0.04260443], dtype=np.float32)
+qpos_std = np.array([0.01278482, 0.01280284, 0.01, 0.03897353, 0.04673523, 0.04948749], dtype=np.float32)
 
 def preprocess_frame(frame_bgr):
     # BGR -> RGB
@@ -81,8 +82,11 @@ def transform_to_string(T):
 
 # ------------- MAIN
 liralabSocket = LiralabSocket(5000)
-cap = cv2.VideoCapture(2)
-_, frame = cap.read()
+cap = cv2.VideoCapture(4)
+ret, frame = cap.read()
+while frame.max() == 0:
+    ret, frame = cap.read()
+    time.sleep(0.5)
 plt.imshow(frame)
 plt.show()
 model = tf.keras.models.load_model("./segmentation_models/unet_dnet121_case_v1.h5",compile=False)
@@ -131,6 +135,12 @@ while(True):
     # Denormalize output #
     #--------------------#
     ee_new_belly = ACT_output_action.cpu().squeeze()[0].detach().numpy() * qpos_std + qpos_mean
+    # Bounding box rotation
+    limit = 10 * np.pi / 180  # ≈ 0.174532925 rad
+    ee_new_belly[3] = np.clip(ee_new_belly[3], -limit, limit)
+    ee_new_belly[4] = np.clip(ee_new_belly[4], -limit, limit)
+    ee_new_belly[5] = np.clip(ee_new_belly[5], -limit, limit)
+    print(ee_new_belly[3:] * 180.0 /np.pi)
     eeR = R.from_euler('xyz', ee_new_belly[3:]).as_matrix()
     eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])
     eeP = ee_new_belly[0:3]

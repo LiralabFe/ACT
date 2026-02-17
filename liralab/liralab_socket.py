@@ -10,10 +10,10 @@ class LiralabSocket:
 
     def write(self, msg : str):
         if self.socket == None: return
-        print(f"WRITE: {msg}")
+        # print(f"WRITE: {msg}")
         self.socket.sendall(msg.encode("utf-8"))
 
     def read(self):
         msg = self.socket.recv(1024).decode("utf-8")
-        print(f"READ: {msg}")
+        # print(f"READ: {msg}")
         return msg

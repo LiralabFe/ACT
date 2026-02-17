@@ -35,26 +35,32 @@ def combined_loss(y_true, y_pred):
 model = tf.keras.models.load_model(
     "./segmentation_models/unet_dnet121_case_v1.h5",
     #"./old_unet_dnet121/models/old_unet_dnet121_case_best_v1.h5",
-    custom_objects={'combined_loss': combined_loss, 'dice_coef': dice_coef, 'iou_score': iou_score},
+    # custom_objects={'combined_loss': combined_loss, 'dice_coef': dice_coef, 'iou_score': iou_score},
     compile=False
 )
 model.summary()
 
 # Imposta la scheda di acquisizione (ad esempio, ID 0 per webcam o ID specifico per scheda di acquisizione)
-video_source = 0
-cap = cv2.VideoCapture(2)
+# video_source = 0
+# cap = cv2.VideoCapture(2)
 
 # Crea una finestra per la trackbar
-cv2.namedWindow("Model Output View")
+#cv2.namedWindow("Model Output View")
 color = np.array([0, 0, 255], dtype='uint8')  # Rosso
 
-PATH = "/home/legion/ROS/kinova_ws/AORTE/AAA_SF_1/image/"
-SAVE_PATH = "/home/legion/ROS/kinova_ws/AORTE/AAA_SF_1/mask/"
+# AP_1, SF_1, EM_1, MR_1, SF_2, SF_3, SF_4
+EPISODE = "AAA_SF_4"
+PATH = f"/home/legion/ROS/kinova_ws/AORTE/{EPISODE}/image/"
+SAVE_PATH = f"/home/legion/ROS/kinova_ws/AORTE/{EPISODE}/mask/"
 
 if not os.path.isdir(SAVE_PATH):
     os.mkdir(SAVE_PATH)
 
+tot_images = len(os.listdir(PATH))
+i = 0
 for image_path in os.listdir(PATH):
+    print(f"Remaining {i}/{tot_images}")
+    i += 1
     #ret, frame = cap.read()
     #if not ret:
     #    break  # Esce se il video è terminato
@@ -90,7 +96,7 @@ for image_path in os.listdir(PATH):
     mask_color = np.repeat(mask[:, :, np.newaxis], 3, axis=2) * color
     overlay = cv2.addWeighted(ori_frame, 0.8, mask_color, 0.2, 0)
 
-    #cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
+    cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
     #print(f"Saved mask_{image_path} in {SAVE_PATH}")
     # Mostra il risultato finale
     #cv2.imshow("Model Output View", overlay)

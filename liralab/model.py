@@ -53,7 +53,7 @@ args = {
     'kl_weight': 10,
     'state_dim': 6,
     'action_dim': 6,
-    'num_episodes': 2,
+    'num_episodes': 7,
     'episode_len': 600,
     'camera_names': ['top'],
     'num_encoder_layers': 4,
