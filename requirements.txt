@@ -1,3 +1,4 @@
+absl-py==2.4.0
 action-msgs==2.0.3
 action-tutorials-interfaces==0.33.7
 action-tutorials-py==0.33.7
@@ -27,6 +28,7 @@ annotated-types==0.7.0
 ansitable==0.11.5
 anyio==4.12.1
 asttokens==3.0.1
+astunparse==1.6.3
 base58==2.0.1
 boto3==1.42.40
 botocore==1.42.40
@@ -69,12 +71,16 @@ examples-rclpy-minimal-subscriber==0.19.7
 executing==2.2.1
 fastapi==0.128.0
 filelock==3.20.3
+flatbuffers==25.12.19
 fonttools==4.61.1
 fsspec==2025.12.0
+gast==0.7.0
 generate-parameter-library-py==0.5.0
 geometry-msgs==5.3.6
+google-pasta==0.2.0
 gps-msgs==2.1.1
 greenlet==3.3.1
+grpcio==1.78.0
 h11==0.16.0
 h5py==3.15.1
 identify==2.6.16
@@ -91,6 +97,7 @@ joint-state-publisher==2.4.0
 joint-state-publisher-gui==2.4.0
 jupyter_client==8.8.0
 jupyter_core==5.9.1
+keras==3.13.2
 kiwisolver==1.4.9
 laser-geometry==2.7.2
 launch==3.4.9
@@ -100,22 +107,28 @@ launch-testing==3.4.9
 launch-testing-ros==0.26.10
 launch-xml==3.4.9
 launch-yaml==3.4.9
+libclang==18.1.1
 lifecycle-msgs==2.0.3
 logging-demo==0.33.7
 Mako==1.3.10
 map-msgs==2.4.1
+Markdown==3.10.2
+markdown-it-py==4.0.0
 MarkupSafe==2.1.5
 matplotlib==3.10.8
 matplotlib-inline==0.2.1
+mdurl==0.1.2
 message-filters==4.11.9
+ml_dtypes==0.5.4
 moveit-configs-utils==2.12.3
 moveit-msgs==2.6.0
 mpmath==1.3.0
+namex==0.1.0
 nav-msgs==5.3.6
 nest-asyncio==1.6.0
 networkx==3.6.1
 nodeenv==1.10.0
-numpy==1.26.4
+numpy==2.4.2
 nvidia-cublas==13.1.0.3
 nvidia-cuda-cupti==13.0.85
 nvidia-cuda-nvrtc==13.0.88
@@ -134,6 +147,8 @@ nvidia-nvtx==13.0.85
 object-recognition-msgs==2.0.0
 octomap-msgs==2.0.1
 opencv-python==4.13.0.90
+opt_einsum==3.4.0
+optree==0.18.0
 osrf-pycommon==2.1.7
 packaging==26.0
 pal-statistics==2.7.0
@@ -148,6 +163,7 @@ platformdirs==4.5.1
 pre_commit==4.5.1
 progress==1.6.1
 prompt_toolkit==3.0.52
+protobuf==6.33.5
 psutil==7.2.2
 ptyprocess==0.7.0
 pure_eval==0.2.3
@@ -172,6 +188,7 @@ rcutils==6.7.4
 requests==2.32.5
 resource-retriever==3.4.4
 RestrictedPython==8.1
+rich==14.3.2
 rmw-dds-common==3.1.0
 roboticstoolbox-python==1.1.1
 ros-gz-bridge==1.0.16
@@ -254,6 +271,10 @@ stereo-msgs==5.3.6
 swift-sim==1.1.0
 sympy==1.14.0
 teleop-twist-keyboard==2.4.1
+tensorboard==2.20.0
+tensorboard-data-server==0.7.2
+tensorflow==2.20.0
+termcolor==3.3.0
 tf2-geometry-msgs==0.36.16
 tf2-kdl==0.36.16
 tf2-msgs==0.36.16
@@ -261,6 +282,7 @@ tf2-py==0.36.16
 tf2-ros-py==0.36.16
 tf2-sensor-msgs==0.36.16
 tf2-tools==0.36.16
+tf_keras==2.20.0
 topic-monitor==0.33.7
 torch==2.10.0+cu130
 torchvision==0.25.0+cu130
@@ -271,6 +293,7 @@ trajectory-msgs==5.3.6
 triton==3.6.0
 turtlesim==1.8.3
 type-description-interfaces==2.0.3
+typeguard==4.5.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 unique-identifier-msgs==2.5.0
@@ -283,4 +306,7 @@ visualization-msgs==5.3.6
 watchdog==6.0.0
 wcwidth==0.5.3
 websockets==16.0
+Werkzeug==3.1.5
+wheel==0.46.3
+wrapt==2.1.1
 xacro==2.1.1

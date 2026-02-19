@@ -2,21 +2,25 @@ from liralab.model import *
 import numpy as np
 from spatialmath import SE3
 import cv2
-import torch
 import torchvision.transforms as transforms
-import roboticstoolbox as rtb
+# import roboticstoolbox as rtb
 import numpy as np
 import socket
 import struct
 import tensorflow as tf
+import torch
 from tensorflow import keras
 import time
 from liralab.liralab_socket import LiralabSocket
 from scipy.spatial.transform import Rotation as R
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    tf.config.set_visible_devices([], 'GPU')
 # --------- NEURAL NETWORK
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
 policy = ACTPolicy()
 policy.cuda()
 policy.load_state_dict(torch.load("experiments/AAA/policy_last.ckpt"))
@@ -82,7 +86,7 @@ def transform_to_string(T):
 
 # ------------- MAIN
 liralabSocket = LiralabSocket(5000)
-cap = cv2.VideoCapture(4)
+cap = cv2.VideoCapture(2)
 ret, frame = cap.read()
 while frame.max() == 0:
     ret, frame = cap.read()

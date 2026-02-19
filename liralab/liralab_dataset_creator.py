@@ -2,13 +2,52 @@ import csv
 import h5py
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
+
+"""""""""
+Usage:
+
+> Read 'EPISODE' folder for .csv, /image and /mask and build h5 in 'HDF5_PATH' for ACT Training.
+
+> If 'H5_WITH_IMAGE_AND_MASK' is set, use it to get image and mask rather then looking for .png files in /image and /mask folders.
+
+"""""""""
 
 EPISODE = "AAA_AP_1"
 MAIN_PATH = "/home/legion/ROS/kinova_ws/AORTE/" + EPISODE + "/"
 CSV_PATH = MAIN_PATH + EPISODE + ".csv"
-HDF5_PATH = MAIN_PATH + EPISODE + ".hdf5"
-SIM_VALUE = True  # attributo 'sim'
+HDF5_PATH = MAIN_PATH + EPISODE + "_episode.hdf5"
+
+H5_WITH_IMAGE_AND_MASK = MAIN_PATH + EPISODE + ".h5" # Values [None, PATH_TO_H5_WITH_IMAGE_AND_MASK]
+
+
+with h5py.File(H5_WITH_IMAGE_AND_MASK, "r") as f:
+    video_frames = f["video_frames"][:]      # shape tipica: (N, H, W) oppure (N, H, W, C)
+    carotid_masks = f["jugular_masks"][:]    # shape tipica: (N, H, W)
+
+idx = 400
+print("video_frames shape:", video_frames.shape)
+print("carotid_masks shape:", carotid_masks.shape)
+plt.figure(figsize=(10,5))
+
+plt.subplot(1,2,1)
+if video_frames.ndim == 4:  # RGB
+    plt.imshow(video_frames[idx])
+else:  # grayscale
+    plt.imshow(video_frames[idx], cmap="gray")
+plt.title("Video Frame")
+plt.axis("off")
+
+plt.subplot(1,2,2)
+plt.imshow(carotid_masks[idx], cmap="gray")
+plt.title("Carotid Mask")
+plt.axis("off")
+
+plt.tight_layout()
+plt.show()
+
+quit()
 
 N = 600
 IMG_H = 256 # 480
@@ -82,7 +121,7 @@ with open(CSV_PATH, newline="") as csvfile:
 # Scrittura HDF5
 with h5py.File(HDF5_PATH, "w") as f:
     # attributi
-    f.attrs["sim"] = SIM_VALUE
+    f.attrs["sim"] = True
 
     # dataset
     f.create_dataset(
