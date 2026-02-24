@@ -14,6 +14,27 @@ import time
 from liralab.liralab_socket import LiralabSocket
 from scipy.spatial.transform import Rotation as R
 
+# -------- APPLICATION
+models = {
+    'AORTA' : {
+        'ACT' : "experiments/AAA/policy_last.ckpt",
+        'SEG' : "segmentation_models/unet_dnet121_case_v1_AORTA.h5",
+        'DATASET' : "data/liralab/AAA",
+    },
+    'JUGUL' : {
+        'ACT' : "experiments/JVP/policy_last.ckpt",
+        'SEG' : "segmentation_models/unet_dnet121_case_v1_NECK.h5",
+        'DATASET' : "data/liralab/JVP",
+    },
+    'CAROT' : {
+        'ACT' : "experiments/CAS/policy_last.ckpt",
+        'SEG' : "segmentation_models/unet_dnet121_case_v1_NECK.h5",
+        'DATASET' : "data/liralab/CAS",
+    },
+}
+
+APP = 'AORTA'
+
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     tf.config.set_visible_devices([], 'GPU')
@@ -23,7 +44,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 policy = ACTPolicy()
 policy.cuda()
-policy.load_state_dict(torch.load("experiments/AAA/policy_last.ckpt"))
+policy.load_state_dict(torch.load(models[APP]["ACT"]))
 device = "cuda" if torch.cuda.is_available() else "cpu"
 policy.eval()
 
@@ -31,8 +52,9 @@ policy.eval()
 IMG_H = 256 # 480
 IMG_W = 256 # 640
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],    std=[0.229, 0.224, 0.225])
-qpos_mean = np.array([0.00368241, -0.0334186, 0.02010795, 0.00242248, -0.01360511, -0.04260443], dtype=np.float32)
-qpos_std = np.array([0.01278482, 0.01280284, 0.01, 0.03897353, 0.04673523, 0.04948749], dtype=np.float32)
+dataset_stats = get_norm_stats(models[APP]['DATASET'])
+qpos_mean = np.array(dataset_stats['qpos_mean'], dtype=np.float32)
+qpos_std = np.array(dataset_stats['qpos_std'], dtype=np.float32)
 
 def preprocess_frame(frame_bgr):
     # BGR -> RGB
@@ -85,15 +107,15 @@ def transform_to_string(T):
     return ";".join(f"{v:.4f}" for v in values)
 
 # ------------- MAIN
-liralabSocket = LiralabSocket(5000)
-cap = cv2.VideoCapture(2)
+liralabSocket = LiralabSocket(5001)
+cap = cv2.VideoCapture(0)
 ret, frame = cap.read()
 while frame.max() == 0:
     ret, frame = cap.read()
     time.sleep(0.5)
 plt.imshow(frame)
 plt.show()
-model = tf.keras.models.load_model("./segmentation_models/unet_dnet121_case_v1.h5",compile=False)
+model = tf.keras.models.load_model(models[APP]['SEG'],compile=False)
 
 # Register init pose
 state = liralabSocket.read().split(';')[:-1]

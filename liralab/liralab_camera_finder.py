@@ -1,7 +1,7 @@
 import cv2
 
 # Apre la webcam (0 = webcam di default)
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
     print("Errore: impossibile aprire la webcam")
