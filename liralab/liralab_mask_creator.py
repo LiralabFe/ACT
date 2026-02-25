@@ -33,7 +33,7 @@ def combined_loss(y_true, y_pred):
 
 # Load del modello
 model = tf.keras.models.load_model(
-    "./segmentation_models/unet_dnet121_case_v1.h5",
+    "./segmentation_models/unet_dnet121_case_v1_AORTA.h5",
     #"./old_unet_dnet121/models/old_unet_dnet121_case_best_v1.h5",
     # custom_objects={'combined_loss': combined_loss, 'dice_coef': dice_coef, 'iou_score': iou_score},
     compile=False
@@ -53,11 +53,12 @@ EPISODE = "AAA_SF_4"
 PATH = f"/home/legion/ROS/kinova_ws/AORTE/{EPISODE}/image/"
 SAVE_PATH = f"/home/legion/ROS/kinova_ws/AORTE/{EPISODE}/mask/"
 
-if not os.path.isdir(SAVE_PATH):
-    os.mkdir(SAVE_PATH)
+#if not os.path.isdir(SAVE_PATH):
+#    os.mkdir(SAVE_PATH)
 
 tot_images = len(os.listdir(PATH))
 i = 0
+cap = cv2.VideoCapture(0)
 for image_path in os.listdir(PATH):
     print(f"Remaining {i}/{tot_images}")
     i += 1
@@ -97,12 +98,11 @@ for image_path in os.listdir(PATH):
     overlay = cv2.addWeighted(ori_frame, 0.8, mask_color, 0.2, 0)
 
     cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
-    #print(f"Saved mask_{image_path} in {SAVE_PATH}")
-    # Mostra il risultato finale
-    #cv2.imshow("Model Output View", overlay)
 
+    print(f"Saved mask_{image_path} in {SAVE_PATH}")
+    # Mostra il risultato finale
+    cv2.imshow("Segmentation", mask_color)
     # Premi "Invio" per uscire
-    print(time.time())
     if cv2.waitKey(1) & 0xFF == 13:
         break
 

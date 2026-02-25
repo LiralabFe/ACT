@@ -10,7 +10,6 @@ if not cap.isOpened():
 while True:
     # Legge un frame dalla webcam
     ret, frame = cap.read()
-    
     if not ret:
         print("Errore nella lettura del frame")
         break
