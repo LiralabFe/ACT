@@ -7,9 +7,10 @@ import torchvision.transforms as transforms
 import numpy as np
 import socket
 import struct
-import tensorflow as tf
+import segmentation_models_pytorch as smp
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 import torch
-from tensorflow import keras
 import time
 from liralab.liralab_socket import LiralabSocket
 from scipy.spatial.transform import Rotation as R
@@ -23,29 +24,22 @@ class liralabILControl:
         self.models = {
             'AORTA' : {
                 'ACT' : "experiments/AAA/policy_last.ckpt",
-                'SEG' : "segmentation_models/unet_dnet121_case_v1_AORTA.h5",
+                'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
                 'DATASET' : "data/liralab/AAA",
                 'MIN_SEGMENTED_PIXEL' : 100,
                 'MIN_SUCCESS_FRAMES' : 40,
             },
             'JUGUL' : {
                 'ACT' : "experiments/JVP/policy_last.ckpt",
-                'SEG' : "segmentation_models/unet_dnet121_case_v1_NECK.h5",
+                'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
                 'DATASET' : "data/liralab/JVP",
             },
             'CAROT' : {
                 'ACT' : "experiments/CAS/policy_last.ckpt",
-                'SEG' : "segmentation_models/unet_dnet121_case_v1_NECK.h5",
+                'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
                 'DATASET' : "data/liralab/CAS",
             },
         }
-
-        self.gpus = tf.config.list_physical_devices('GPU')
-        if self.gpus:
-            tf.config.set_visible_devices([], 'GPU')
-        # --------- NEURAL NETWORK
-        os.environ["TF_USE_LEGACY_KERAS"] = "1"
-        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
         self.policy = ACTPolicy()
         self.policy.cuda()
@@ -56,7 +50,10 @@ class liralabILControl:
         # ---------- NORMALIZATION
         self.IMG_H = 256 # 480
         self.IMG_W = 256 # 640
-        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],    std=[0.229, 0.224, 0.225])
+        mean=[0.485, 0.456, 0.406]
+        std=[0.229, 0.224, 0.225]
+        self.normalize = transforms.Normalize(mean, std)
+        self.seg_normalization = A.Compose([A.Normalize(mean, std),A.ToFloat(max_value=255.0),ToTensorV2()])
         self.dataset_stats = get_norm_stats(self.models[APP]['DATASET'])
         self.qpos_mean = np.array(self.dataset_stats['qpos_mean'], dtype=np.float32)
         self.qpos_std = np.array(self.dataset_stats['qpos_std'], dtype=np.float32)
@@ -64,7 +61,7 @@ class liralabILControl:
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5002)
+        self.liralabSocket = LiralabSocket(5000)
         self.cap = cv2.VideoCapture(0)
         ret, frame = self.cap.read()
         while frame.max() == 0:
@@ -72,7 +69,7 @@ class liralabILControl:
             time.sleep(0.5)
         plt.imshow(frame)
         plt.show()
-        self.seg_model = tf.keras.models.load_model(self.models[APP]['SEG'],compile=False)
+        self.seg_model = self.get_seg_model(self.models[APP]['SEG'])
 
     def preprocess_frame(self,frame_bgr):
         # BGR -> RGB
@@ -90,6 +87,23 @@ class liralabILControl:
 
         return frame.unsqueeze(0)  # [1,C,H,W]
     
+    def get_seg_model(self,path):
+        model = smp.UnetPlusPlus(
+        encoder_name="densenet121",
+        encoder_weights=None,  # Non serve scaricare ImageNet in inferenza, carichiamo i nostri
+        in_channels=3,
+        classes=2,             # Sfondo (0) e Giugolare (1)
+        decoder_attention_type="scse"
+        )
+        
+        # Carica i pesi
+        state_dict = torch.load(path, map_location=self.device)
+        model.load_state_dict(state_dict)
+        model.to(self.device)
+        model.eval()  # Modalità inferenza
+        
+        return model
+
     def get_tran_from_state(self,state):
         return np.array([
         [state[3],state[4],state[5],state[0]],
@@ -122,12 +136,13 @@ class liralabILControl:
     def get_segmented_frame(self):
         ret, frame = self.cap.read()                                                            # frame [w, h, 3]
         if not ret: return None, None
-        frame = cv2.resize(frame, (self.IMG_W, self.IMG_H), interpolation=cv2.INTER_LINEAR)     # frame [255, 255, 3]
-        frame = np.expand_dims(frame, axis=0)                                                   # frame [1, 255, 255, 3]
-        mask = self.seg_model.predict(frame, verbose=1)[0]                                      # mask  [1, 255, 255]
-        mask = (mask > 0.5).astype(np.float32).squeeze()*255.0                                  # mask  [255, 255]
-        frame = frame.squeeze()[:,:,0].squeeze()                                                # frame [255, 255]
-        frame = self.append_frame_and_mask(frame, mask)                                         # frame [255, 255, 3] => [R: frame, G: mask, B: unused]
+        #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.resize(frame, (self.IMG_W, self.IMG_H))                                     # frame [255, 255, 3]
+        input = self.seg_normalization(image=frame)                                             # input [3, 255, 255]
+        input = input['image'].unsqueeze(0).to(self.device)                                     # input [1, 3, 255, 255]
+        mask = self.seg_model(input)                                                            # mask  [1, 2, 255, 255]
+        mask = torch.argmax(mask, dim=1).squeeze().cpu().numpy().astype(np.uint8) * 255.0       # mask  [255, 255]
+        frame = self.append_frame_and_mask(frame[:,:,0], mask)                                  # frame [255, 255, 3] => [R: frame, G: mask, B: unused]
         return frame, mask                                                                      # uint8, uint8 [0-255]
 
     def get_current_ee_from_initial(self):

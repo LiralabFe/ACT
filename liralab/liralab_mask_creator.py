@@ -1,44 +1,46 @@
-import numpy as np
-import cv2
-import tensorflow as tf
-from tensorflow import keras
-import matplotlib.pyplot as plt
 import os
-import time
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+import numpy as np
+import torch
+import cv2
+import segmentation_models_pytorch as smp
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import matplotlib.pyplot as plt
 
+def get_model(weights_path, device):
+    """Inizializza il modello e carica i pesi addestrati."""
+    print(f"Caricamento del modello dai pesi: {weights_path}")
+    model = smp.UnetPlusPlus(
+        encoder_name="densenet121",
+        encoder_weights=None,  # Non serve scaricare ImageNet in inferenza, carichiamo i nostri
+        in_channels=3,
+        classes=2,             # Sfondo (0) e Giugolare (1)
+        decoder_attention_type="scse"
+    )
+    
+    # Carica i pesi
+    state_dict = torch.load(weights_path, map_location=device)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()  # Modalità inferenza
+    
+    return model
 
-def iou_score(y_true, y_pred, smooth=1e-6):
-    y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(y_pred > 0.5, tf.float32)
-    intersection = tf.reduce_sum(y_true * y_pred)
-    union = tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) - intersection
-    return (intersection + smooth) / (union + smooth)
-
-def dice_coef(y_true, y_pred, smooth=1e-6):
-    y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(y_pred > 0.5, tf.float32)
-    intersection = tf.reduce_sum(y_true * y_pred)
-    return (2. * intersection + smooth) / (tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) + smooth)
-
-def dice_loss(y_true, y_pred, smooth=1e-6):
-    y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(y_pred, tf.float32)
-    intersection = tf.reduce_sum(y_true * y_pred)
-    return 1 - (2 * intersection + smooth) / (tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) + smooth)
-
-# Combined Loss
-def combined_loss(y_true, y_pred):
-    return keras.losses.BinaryCrossentropy(from_logits=False)(y_true, y_pred) + dice_loss(y_true, y_pred)
+def get_transforms():
+    """Restituisce le stesse identiche trasformazioni usate nel validation."""
+    imagenet_mean = (0.485, 0.456, 0.406)
+    imagenet_std = (0.229, 0.224, 0.225)
+    
+    return A.Compose([
+        A.Resize(256, 256),
+        A.Normalize(mean=imagenet_mean, std=imagenet_std),
+        A.ToFloat(max_value=255.0),
+        ToTensorV2()
+    ])
 
 # Load del modello
-model = tf.keras.models.load_model(
-    "./segmentation_models/unet_dnet121_case_v1_AORTA.h5",
-    #"./old_unet_dnet121/models/old_unet_dnet121_case_best_v1.h5",
-    # custom_objects={'combined_loss': combined_loss, 'dice_coef': dice_coef, 'iou_score': iou_score},
-    compile=False
-)
-model.summary()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = get_model("./segmentation_models/unetplusplus_imagenet_jugular.pth",device)
 
 # Imposta la scheda di acquisizione (ad esempio, ID 0 per webcam o ID specifico per scheda di acquisizione)
 # video_source = 0
@@ -72,36 +74,30 @@ for image_path in os.listdir(PATH):
     H, W, _ = frame.shape
     ori_frame = frame.copy()
 
-    frame = cv2.resize(frame, (256, 256), interpolation=cv2.INTER_LINEAR)
-
-    # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # if frame.ndim == 2:
-    #     frame = np.expand_dims(frame, axis=-1)
-    # if frame.ndim == 3 and frame.shape[-1] != 3:
-    #     frame = np.repeat(frame, 3, axis=-1)
-    # frame = tf.cast(frame, tf.float32) / 255.0
-
-    frame = np.expand_dims(frame, axis=0)
-
-    # Predizione della maschera
-    mask = model.predict(frame, verbose=1)[0]
-    mask = (mask > 0.5).astype(np.uint8)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    original_size = frame.shape[:2]  # (Altezza, Larghezza)
+    
+    # 3. Applica le trasformazioni
+    transform = get_transforms()
+    augmented = transform(image=frame)
+    input_tensor = augmented['image'].unsqueeze(0).to(device)  # Aggiungi dimensione batch
+    
+    with torch.no_grad():
+        output = model(input_tensor)
+        # Prendi la classe con la probabilità più alta (0 o 1)
+        mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()
 
     # Ridimensionamento della maschera senza interpolazione
     mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
 
-    # **DEBUG: Mostra la maschera grezza**
-    #cv2.imshow("Raw Mask Prediction", mask * 255)
-
     # Overlay con colore rosso per la maschera
     mask_color = np.repeat(mask[:, :, np.newaxis], 3, axis=2) * color
-    overlay = cv2.addWeighted(ori_frame, 0.8, mask_color, 0.2, 0)
 
     cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
 
     print(f"Saved mask_{image_path} in {SAVE_PATH}")
     # Mostra il risultato finale
-    cv2.imshow("Segmentation", mask_color)
+   
     # Premi "Invio" per uscire
     if cv2.waitKey(1) & 0xFF == 13:
         break
