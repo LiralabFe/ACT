@@ -38,69 +38,79 @@ def get_transforms():
         ToTensorV2()
     ])
 
+def sort_by_final_number(file_list):
+    return sorted(file_list, key=lambda x: int(x.split('_')[-1].split('.')[0]))
+
 # Load del modello
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = get_model("./segmentation_models/unetplusplus_imagenet_jugular.pth",device)
 
 # Imposta la scheda di acquisizione (ad esempio, ID 0 per webcam o ID specifico per scheda di acquisizione)
 # video_source = 0
-# cap = cv2.VideoCapture(2)
+# cap = cv2.VideoCapture(0)
 
 # Crea una finestra per la trackbar
 #cv2.namedWindow("Model Output View")
 color = np.array([0, 0, 255], dtype='uint8')  # Rosso
 
-# AP_1, SF_1, EM_1, MR_1, SF_2, SF_3, SF_4
-EPISODE = "AAA_SF_4"
-PATH = f"/home/legion/ROS/kinova_ws/AORTE/{EPISODE}/image/"
-SAVE_PATH = f"/home/legion/ROS/kinova_ws/AORTE/{EPISODE}/mask/"
+EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE"
+episodes_list = [f for f in os.listdir(EPISODES_PATH) if os.path.isdir(os.path.join(EPISODES_PATH, f))]
+e = 0
+for EPISODE in sort_by_final_number(episodes_list):
+    print("#"*50)
+    print("#"*10 + f" PROCESSING EPISODE {EPISODE} " + "#"*10)
+    print("#"*50)
+    print(f"###### DONE {e}/{len(episodes_list)} episodes")
+    e += 1
+    PATH = f"{EPISODES_PATH}/{EPISODE}/image/"
+    SAVE_PATH = f"{EPISODES_PATH}/{EPISODE}/mask/"
 
-#if not os.path.isdir(SAVE_PATH):
-#    os.mkdir(SAVE_PATH)
+    if not os.path.isdir(SAVE_PATH):
+        os.mkdir(SAVE_PATH)
 
-tot_images = len(os.listdir(PATH))
-i = 0
-cap = cv2.VideoCapture(0)
-for image_path in os.listdir(PATH):
-    print(f"Remaining {i}/{tot_images}")
-    i += 1
-    #ret, frame = cap.read()
-    #if not ret:
-    #    break  # Esce se il video è terminato
-    frame = cv2.imread(PATH + image_path)
+    tot_images = len(os.listdir(PATH))
+    i = 0
 
-    # Crop dell'immagine
-    # frame = frame[200:900, 475:1475]
-    H, W, _ = frame.shape
-    ori_frame = frame.copy()
+    for image_path in sort_by_final_number(os.listdir(PATH)):
+        if i % 100 == 0:
+            print(f"DONE {i}/{tot_images} for episode {EPISODE}")
+        i += 1
+        #ret, frame = cap.read()
+        #if not ret:
+        #    break  # Esce se il video è terminato
+        frame = cv2.imread(PATH + image_path)
 
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    original_size = frame.shape[:2]  # (Altezza, Larghezza)
+        # Crop dell'immagine
+        # frame = frame[200:900, 475:1475]
+        H, W, _ = frame.shape
+        ori_frame = frame.copy()
+
+        #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        original_size = frame.shape[:2]  # (Altezza, Larghezza)
+        
+        # 3. Applica le trasformazioni
+        transform = get_transforms()
+        augmented = transform(image=frame)
+        input_tensor = augmented['image'].unsqueeze(0).to(device)  # Aggiungi dimensione batch
+        
+        with torch.no_grad():
+            output = model(input_tensor)
+            # Prendi la classe con la probabilità più alta (0 o 1)
+            mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()
+
+        # Ridimensionamento della maschera senza interpolazione
+        mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
+
+        # Overlay con colore rosso per la maschera
+        mask_color = (np.repeat(mask[:, :, np.newaxis], 3, axis=2) * color).astype("uint8") * 255.0
+
+        cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
+        cv2.imshow(EPISODE,(mask_color + ori_frame)/255.0)
+        # Mostra il risultato finale
     
-    # 3. Applica le trasformazioni
-    transform = get_transforms()
-    augmented = transform(image=frame)
-    input_tensor = augmented['image'].unsqueeze(0).to(device)  # Aggiungi dimensione batch
-    
-    with torch.no_grad():
-        output = model(input_tensor)
-        # Prendi la classe con la probabilità più alta (0 o 1)
-        mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()
+        # Premi "Invio" per uscire
+        if cv2.waitKey(1) & 0xFF == 13:
+            break
+    cv2.destroyAllWindows()
 
-    # Ridimensionamento della maschera senza interpolazione
-    mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
-
-    # Overlay con colore rosso per la maschera
-    mask_color = np.repeat(mask[:, :, np.newaxis], 3, axis=2) * color
-
-    cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
-
-    print(f"Saved mask_{image_path} in {SAVE_PATH}")
-    # Mostra il risultato finale
-   
-    # Premi "Invio" per uscire
-    if cv2.waitKey(1) & 0xFF == 13:
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+print("\n\nFINISH\n\n")
