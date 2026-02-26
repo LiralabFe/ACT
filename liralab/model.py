@@ -38,7 +38,7 @@ from torch import nn, Tensor
 from aim import Run
 
 args = {
-    'num_epochs': 4500,
+    'num_epochs': 5000,
     'eval_interval_epochs': 500,
     'num_eval_rollouts': 100,
     'lr_backbone': 1e-5,
@@ -53,7 +53,7 @@ args = {
     'kl_weight': 10,
     'state_dim': 6,
     'action_dim': 6,
-    'num_episodes': 7,
+    'num_episodes': 22,
     'episode_len': 600,
     'camera_names': ['top'],
     'num_encoder_layers': 4,

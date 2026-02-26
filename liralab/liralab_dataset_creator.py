@@ -9,7 +9,7 @@ import os
 """""""""
 Usage:
 
-> Read 'EPISODE' folder for .csv, /image and /mask and build h5 in 'HDF5_PATH' for ACT Training.
+> Read 'EPISODE' folder for .csv, /image and /mask and build hdf5 in 'HDF5_PATH' for ACT Training.
 
 """""""""
 def sort_by_final_number(file_list):
@@ -26,7 +26,7 @@ for EPISODE in sort_by_final_number(episodes_list):
 
     MAIN_PATH = "/home/legion/ROS/kinova_ws/AORTE/" + EPISODE + "/"
     CSV_PATH = MAIN_PATH + EPISODE + ".csv"
-    HDF5_PATH = MAIN_PATH + f"episode_{e}.h5"
+    HDF5_PATH = MAIN_PATH + f"episode_{e}.hdf5"
     N = 600
     IMG_H = 256 # 480
     IMG_W = 256 # 640
