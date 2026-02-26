@@ -1,3 +1,4 @@
+import liralab.model
 from liralab.model import *
 import numpy as np
 from spatialmath import SE3
@@ -14,7 +15,8 @@ import torch
 import time
 from liralab.liralab_socket import LiralabSocket
 from scipy.spatial.transform import Rotation as R
-
+import json
+from pathlib import Path
 
 class liralabILControl:
     def __init__(self, APP : str):
@@ -23,7 +25,7 @@ class liralabILControl:
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA/policy_last.ckpt",
+                'ACT' : "experiments/AAA_3/policy_last.ckpt",
                 'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
                 'DATASET' : "data/liralab/AAA",
                 'MIN_SEGMENTED_PIXEL' : 100,
@@ -41,6 +43,12 @@ class liralabILControl:
             },
         }
 
+        # ---------- ARGS FROM JSON
+        args_path = Path(self.models[self.app]["ACT"]).parent / "args.json"
+        with open(args_path, "r") as f:
+            args = json.load(f)
+        liralab.model.args = args
+        
         self.policy = ACTPolicy()
         self.policy.cuda()
         self.policy.load_state_dict(torch.load(self.models[APP]["ACT"]))
@@ -69,6 +77,11 @@ class liralabILControl:
             time.sleep(0.5)
         plt.imshow(frame)
         plt.show()
+
+        plt.ion()
+        self.fig, self.ax = plt.subplots()
+        self.im = self.ax.imshow(np.zeros_like(frame))
+
         self.seg_model = self.get_seg_model(self.models[APP]['SEG'])
 
     def preprocess_frame(self,frame_bgr):
@@ -138,11 +151,14 @@ class liralabILControl:
         if not ret: return None, None
         #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame = cv2.resize(frame, (self.IMG_W, self.IMG_H))                                     # frame [255, 255, 3]
-        input = self.seg_normalization(image=frame)                                             # input [3, 255, 255]
-        input = input['image'].unsqueeze(0).to(self.device)                                     # input [1, 3, 255, 255]
-        mask = self.seg_model(input)                                                            # mask  [1, 2, 255, 255]
+        seg_input = self.seg_normalization(image=frame)                                         # seg_input [3, 255, 255]
+        seg_input = seg_input['image'].unsqueeze(0).to(self.device)                             # seg_input [1, 3, 255, 255]
+        mask = self.seg_model(seg_input)                                                        # mask  [1, 2, 255, 255]
         mask = torch.argmax(mask, dim=1).squeeze().cpu().numpy().astype(np.uint8) * 255.0       # mask  [255, 255]
         frame = self.append_frame_and_mask(frame[:,:,0], mask)                                  # frame [255, 255, 3] => [R: frame, G: mask, B: unused]
+        
+        self.im.set_data(frame / 255.0)
+        plt.pause(0.2)
         return frame, mask                                                                      # uint8, uint8 [0-255]
 
     def get_current_ee_from_initial(self):
@@ -190,9 +206,8 @@ class liralabILControl:
             #--------------------------------#
             frame, mask = self.get_segmented_frame()
             if frame is None: break
-            result, frame_index, aorta_pixels = self.app_achived_result(frame_index, mask)
-            print(f"FRAME: {frame_index} -- {mask.sum()}")
-            if result: return # ---- SUCCESS ----
+            # result, frame_index, aorta_pixels = self.app_achived_result(frame_index, mask)
+            # if result: return # ---- SUCCESS ----
 
             #-------------------------#
             # Normalize input for ACT #
@@ -215,7 +230,7 @@ class liralabILControl:
             ee_new_belly[3] = np.clip(ee_new_belly[3], -limit, limit)
             ee_new_belly[4] = np.clip(ee_new_belly[4], -limit, limit)
             ee_new_belly[5] = np.clip(ee_new_belly[5], -limit, limit)
-            print(ee_new_belly[3:] * 180.0 /np.pi)
+
             eeR = R.from_euler('xyz', ee_new_belly[3:]).as_matrix()
             eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])
             eeP = ee_new_belly[0:3]
