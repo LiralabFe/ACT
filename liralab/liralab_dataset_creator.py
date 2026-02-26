@@ -26,7 +26,7 @@ for EPISODE in sort_by_final_number(episodes_list):
 
     MAIN_PATH = "/home/legion/ROS/kinova_ws/AORTE/" + EPISODE + "/"
     CSV_PATH = MAIN_PATH + EPISODE + ".csv"
-    HDF5_PATH = MAIN_PATH + f"episode_{e}.hdf5"
+    HDF5_PATH = MAIN_PATH + f"episode_{e}.h5"
     N = 600
     IMG_H = 256 # 480
     IMG_W = 256 # 640
