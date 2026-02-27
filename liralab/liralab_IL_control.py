@@ -47,8 +47,8 @@ class liralabILControl:
         args_path = Path(self.models[self.app]["ACT"]).parent / "args.json"
         with open(args_path, "r") as f:
             args = json.load(f)
-        liralab.model.args = args
-        
+            liralab.model.args = args
+
         self.policy = ACTPolicy()
         self.policy.cuda()
         self.policy.load_state_dict(torch.load(self.models[APP]["ACT"]))
