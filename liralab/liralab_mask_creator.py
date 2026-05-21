@@ -53,7 +53,7 @@ model = get_model("./segmentation_models/unetplusplus_imagenet_jugular.pth",devi
 #cv2.namedWindow("Model Output View")
 color = np.array([0, 0, 255], dtype='uint8')  # Rosso
 
-EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE"
+EPISODES_PATH = "/home/legion/ROS/kinova_ws/CONA"
 episodes_list = [f for f in os.listdir(EPISODES_PATH) if os.path.isdir(os.path.join(EPISODES_PATH, f))]
 e = 0
 for EPISODE in sort_by_final_number(episodes_list):

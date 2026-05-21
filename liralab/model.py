@@ -38,34 +38,34 @@ from torch import nn, Tensor
 from aim import Run
 
 args = {
-    'num_epochs': 5000,
+    'num_epochs': 9000,
     'eval_interval_epochs': 500,
     'num_eval_rollouts': 100,
     'lr_backbone': 1e-5,
-    'batch_size': 8,
-    'trained_model_dir': 'experiments/AAA_3/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
+    'batch_size': 64,
+    'trained_model_dir': 'experiments/AAA_10/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
     'task_name': 'sim_transfer_cube_scripted',
     'dataset_dir': 'data/liralab/AAA/', # '../data/aloha/sim_transfer_cube_scripted',
-    'chunk_size': 100,  # chunk_size is --> num_queries <-- !!!!
+    'chunk_size': 10,  # chunk_size is --> num_queries <-- !!!!
     'd_model': 512,  # d_model
-    'dim_feedforward': 3200,
-    'lr': 1e-6,
-    'kl_weight': 10,
+    'dim_feedforward': 4096, #3200,
+    'lr': 1e-5,
+    'kl_weight': 100,
     'state_dim': 6,
     'action_dim': 6,
-    'num_episodes': 22,
+    'num_episodes': 27,
     'episode_len': 600,
     'camera_names': ['top'],
-    'num_encoder_layers': 4,
-    'num_decoder_layers': 17,
-    'backbone': 'resnet18',
-    'nhead': 8,
+    'num_encoder_layers': 5,
+    'num_decoder_layers': 7,
+    'backbone': 'resnet34',
+    'nhead': 64,
     'weight_decay': 1e-4,
-    'dropout': 0.1,
-    'position_embedding': 'sine',
+    'dropout': 0.15,
+    'position_embedding': 'learned',
     'normalize_before': False,
     'fps': 10,
-    'latent_dim': 32,
+    'latent_dim': 128,
 }
 
 def get_norm_stats(dataset_dir : str):
@@ -199,7 +199,7 @@ class cvaeEncoder(TransformerEncoder):
     def __init__(self):
         encoder_layer = TransformerEncoderLayer(args['d_model'], args['nhead'], args['dim_feedforward'],
                                         args['dropout'], "relu", args['normalize_before'])
-        encoder_norm = nn.LayerNorm(d_model) if args['normalize_before'] else None
+        encoder_norm = nn.LayerNorm(args['d_model']) if args['normalize_before'] else None
         super().__init__(encoder_layer, args['num_encoder_layers'], encoder_norm)
         
         self.cvae_encoder_input_collector = cvaeEncoderInputCollator()

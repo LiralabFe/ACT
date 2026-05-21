@@ -25,7 +25,7 @@ class liralabILControl:
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA_3/policy_last.ckpt",
+                'ACT' : "experiments/AAA_9/policy_epoch_7630.ckpt",
                 'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
                 'DATASET' : "data/liralab/AAA",
                 'MIN_SEGMENTED_PIXEL' : 100,
@@ -49,10 +49,9 @@ class liralabILControl:
             args = json.load(f)
             liralab.model.args = args
 
-        self.policy = ACTPolicy()
-        self.policy.cuda()
-        self.policy.load_state_dict(torch.load(self.models[APP]["ACT"]))
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.policy = ACTPolicy().to(self.device)
+        self.policy.load_state_dict(torch.load(self.models[APP]["ACT"], map_location=self.device))
         self.policy.eval()
 
         # ---------- NORMALIZATION
@@ -97,7 +96,7 @@ class liralabILControl:
 
         frame /= 255.0
         frame = self.normalize(frame)
-
+        
         return frame.unsqueeze(0)  # [1,C,H,W]
     
     def get_seg_model(self,path):
@@ -195,6 +194,7 @@ class liralabILControl:
 
     def start_aorta_app(self):
         frame_index = 0
+        ee_new_belly_old = None
         while(True):
             #------------------------#
             # Read state from socket #
@@ -227,6 +227,16 @@ class liralabILControl:
             ee_new_belly = ACT_output_action.cpu().squeeze()[0].detach().numpy() * self.qpos_std + self.qpos_mean
             # Bounding box rotation
             limit = 10 * np.pi / 180  # ≈ 0.174532925 rad
+            if ee_new_belly_old is not None:
+                if(np.abs((ee_new_belly[3] - ee_new_belly_old[3]) * 180.0 / np.pi) > 10):
+                    print("X: " + (ee_new_belly[3] - ee_new_belly_old[3]) * 180.0 / np.pi)
+                
+                if(np.abs((ee_new_belly[4] - ee_new_belly_old[4]) * 180.0 / np.pi) > 10):
+                    print("Y: " + (ee_new_belly[4] - ee_new_belly_old[4]) * 180.0 / np.pi)
+
+                if(np.abs((ee_new_belly[5] - ee_new_belly_old[5]) * 180.0 / np.pi) > 10):
+                    print("Z: " + (ee_new_belly[5] - ee_new_belly_old[5]) * 180.0 / np.pi)
+            ee_new_belly_old = ee_new_belly
             ee_new_belly[3] = np.clip(ee_new_belly[3], -limit, limit)
             ee_new_belly[4] = np.clip(ee_new_belly[4], -limit, limit)
             ee_new_belly[5] = np.clip(ee_new_belly[5], -limit, limit)

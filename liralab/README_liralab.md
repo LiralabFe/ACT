@@ -1,5 +1,14 @@
 # How To generate the Dataset, train and execute ACT
 
+## Record new episodes
+In `liralab_kinova` ros package:
+- Uncomment ```REGISTER NEW EPISODES``` code.
+- Comment ```RUN ACT``` code.
+- ```colcon build```
+- Run ```ros2 run liralab_kinova liralab_kinova EPISODE_NAME```.
+
+The new episode is saved in ```ROS/kinova_ws``` ros workspace.
+
 ## Generate the Dataset and Train ACT 
 Follow the following steps in sequence.
 
@@ -74,7 +83,14 @@ Ensure that ```DATASET``` field is set to the correct folder (usually ```'data/l
 ### 0. Connect US pc and check for device ID:
 You can run this handy script to get the camera ID:
 
-``` python -m liralab.liralab_camera_finder ``` 
+``` python -m liralab.liralab_camera_finder ```
+
+Then:
+
+- Comment ```REGISTER NEW EPISODES``` code.
+- Uncomment ```RUN ACT``` code.
+- ```colcon build```
+
 ### 1. Run Low Level Controller
 ``` ros2 run liralab_kinova liralab_kinova ```
 ### 2. Run Imitation Learning Controller
