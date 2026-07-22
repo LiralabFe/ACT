@@ -1,2 +1,16 @@
+# 1. Ignora tutti i file nella cartella principale (root)
+/*
+
+# 2. Ignora tutte le cartelle della root tranne 'hardsmeg'
 *
+!hardsmeg/
+
+# 3. Entra in hardsmeg, ignora tutto il suo contenuto tranne 'HarDNet_MSEG'
+hardsmeg/*
+!hardsmeg/HarDNet_MSEG/
+
+# 4. Non ignorare assolutamente nulla dentro 'HarDNet_MSEG'
+!hardsmeg/HarDNet_MSEG/**
+
+# 5. Non ignorare il file .gitignore principale
 !.gitignore

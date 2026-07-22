@@ -6,8 +6,9 @@ import segmentation_models_pytorch as smp
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
+from segmentation_models.hardsmeg.HarDNet_MSEG.lib.HarDMSEG import HarDMSEG
 
-def get_model(weights_path, device):
+def get_model_unetplusplus(weights_path, device):
     """Inizializza il modello e carica i pesi addestrati."""
     print(f"Caricamento del modello dai pesi: {weights_path}")
     model = smp.UnetPlusPlus(
@@ -26,6 +27,15 @@ def get_model(weights_path, device):
     
     return model
 
+def get_model_hardsmeg(weights_path, device):
+    model = HarDMSEG()
+    state_dict = torch.load(weights_path, map_location=device)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()  # Modalità inferenza
+    return model
+
+
 def get_transforms():
     """Restituisce le stesse identiche trasformazioni usate nel validation."""
     imagenet_mean = (0.485, 0.456, 0.406)
@@ -43,7 +53,8 @@ def sort_by_final_number(file_list):
 
 # Load del modello
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = get_model("./segmentation_models/unetplusplus_imagenet_jugular.pth",device)
+# model = get_model_unetplusplus("./segmentation_models/unetplusplus_imagenet_jugular.pth",device)
+model = get_model_hardsmeg("./segmentation_models/hardsmeg/hardnet68.pth", device)
 
 # Imposta la scheda di acquisizione (ad esempio, ID 0 per webcam o ID specifico per scheda di acquisizione)
 # video_source = 0
@@ -53,7 +64,7 @@ model = get_model("./segmentation_models/unetplusplus_imagenet_jugular.pth",devi
 #cv2.namedWindow("Model Output View")
 color = np.array([0, 0, 255], dtype='uint8')  # Rosso
 
-EPISODES_PATH = "/home/legion/ROS/kinova_ws/CONA"
+EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE"
 episodes_list = [f for f in os.listdir(EPISODES_PATH) if os.path.isdir(os.path.join(EPISODES_PATH, f))]
 e = 0
 for EPISODE in sort_by_final_number(episodes_list):
@@ -92,11 +103,21 @@ for EPISODE in sort_by_final_number(episodes_list):
         transform = get_transforms()
         augmented = transform(image=frame)
         input_tensor = augmented['image'].unsqueeze(0).to(device)  # Aggiungi dimensione batch
-        
+
         with torch.no_grad():
             output = model(input_tensor)
+
+            if isinstance(model, HarDMSEG):
+                if isinstance(output, tuple):
+                    output = output[0]
+                prob = torch.sigmoid(output)
+                mask = (prob > 0.5).float().squeeze().cpu().numpy()
+                output = model(input_tensor)
             # Prendi la classe con la probabilità più alta (0 o 1)
-            mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()
+            elif isinstance(model, smp.UnetPlusPlus):
+                mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()
+            else:
+                print("Model is not a known instance")
 
         # Ridimensionamento della maschera senza interpolazione
         mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)

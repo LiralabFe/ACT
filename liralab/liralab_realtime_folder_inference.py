@@ -8,9 +8,10 @@ import segmentation_models_pytorch as smp
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
+from segmentation_models.hardsmeg.HarDNet_MSEG.lib.HarDMSEG import HarDMSEG
 
 
-def get_model(weights_path, device):
+def get_model_unetplusplus(weights_path, device):
     """Inizializza il modello e carica i pesi addestrati."""
     print(f"Caricamento del modello dai pesi: {weights_path}")
     model = smp.UnetPlusPlus(
@@ -28,6 +29,16 @@ def get_model(weights_path, device):
     model.eval()  # Modalità inferenza
     
     return model
+
+def get_model_hardsmeg(weights_path, device):
+    model = HarDMSEG()
+    state_dict = torch.load(weights_path, map_location=device)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()  # Modalità inferenza
+    return model
+
+
 def get_transforms():
     """Restituisce le stesse identiche trasformazioni usate nel validation."""
     imagenet_mean = (0.485, 0.456, 0.406)
@@ -46,7 +57,9 @@ cartella_mask = f"/home/legion/ROS/kinova_ws/{EPISODE}/mask/"
 ultimo_file_mostrato = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Runnung on {device}")
-model = get_model("./segmentation_models/unetplusplus_imagenet_jugular.pth",device)
+# model = get_model_unetplusplus("./segmentation_models/unetplusplus_imagenet_jugular.pth",device)
+model = get_model_hardsmeg("./segmentation_models/hardsmeg/hardnet68.pth", device)
+
 color = np.array([0, 0, 255], dtype='uint8')  # Rosso
 if not os.path.isdir(cartella_mask):
         os.mkdir(cartella_mask)
@@ -78,8 +91,18 @@ while True:
                 
                 with torch.no_grad():
                     output = model(input_tensor)
+
+                    if isinstance(model, HarDMSEG):
+                        if isinstance(output, tuple):
+                            output = output[0]
+                        prob = torch.sigmoid(output)
+                        mask = (prob > 0.5).float().squeeze().cpu().numpy()
+                        output = model(input_tensor)
                     # Prendi la classe con la probabilità più alta (0 o 1)
-                    mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()
+                    elif isinstance(model, smp.UnetPlusPlus):
+                        mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()
+                    else:
+                        print("Model is not a known instance")
 
                 # Ridimensionamento della maschera senza interpolazione
                 mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
@@ -95,3 +118,41 @@ while True:
     time.sleep(0.1)
 
 cv2.destroyAllWindows()
+
+"""
+Format Video Capture:
+	Width/Height      : 1920/1080
+	Pixel Format      : 'MJPG' (Motion-JPEG)
+	Field             : None
+	Bytes per Line    : 0
+	Size Image        : 4147200
+	Colorspace        : sRGB
+	Transfer Function : Rec. 709
+	YCbCr/HSV Encoding: ITU-R 601
+	Quantization      : Default (maps to Full Range)
+	Flags             : 
+
+    
+    Streaming Parameters Video Capture:
+	Capabilities     : timeperframe
+	Frames per second: 30.000 (30/1)
+	Read buffers     : 0
+
+
+Format Video Capture:
+	Width/Height      : 1280/720
+	Pixel Format      : 'YUYV' (YUYV 4:2:2)
+	Field             : None
+	Bytes per Line    : 2560
+	Size Image        : 1843200
+	Colorspace        : sRGB
+	Transfer Function : Rec. 709
+	YCbCr/HSV Encoding: ITU-R 601
+	Quantization      : Default (maps to Limited Range)
+	Flags             : 
+
+    	Capabilities     : timeperframe
+	Frames per second: 10.000 (10/1)
+	Read buffers     : 0
+
+"""
