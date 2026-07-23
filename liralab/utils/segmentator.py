@@ -13,6 +13,9 @@ import logging
 
 class Segmentator:
     def __init__(self, weights, model_type = "UnetPP"):
+        """
+        Available models ["UnetPP", "HarDMSEG"]
+        """
         available_models = ["UnetPP", "HarDMSEG"]
         assert model_type in available_models, logging.error(f"Model {model_type} is unknown. Has to be one of: {available_models}.")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
