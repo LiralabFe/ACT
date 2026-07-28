@@ -17,6 +17,7 @@ from liralab.liralab_socket import LiralabSocket
 from scipy.spatial.transform import Rotation as R
 import json
 from pathlib import Path
+from liralab.utils.segmentator import Segmentator
 
 class liralabILControl:
     def __init__(self, APP : str):
@@ -25,8 +26,9 @@ class liralabILControl:
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA_9/policy_epoch_7630.ckpt",
-                'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
+                'ACT' : "experiments/AAA_11/policy_epoch_8854.ckpt",
+                'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
+                'SEG_MODEL' : "HarDMSEG",
                 'DATASET' : "data/liralab/AAA",
                 'MIN_SEGMENTED_PIXEL' : 100,
                 'MIN_SUCCESS_FRAMES' : 40,
@@ -53,6 +55,9 @@ class liralabILControl:
         self.policy = ACTPolicy().to(self.device)
         self.policy.load_state_dict(torch.load(self.models[APP]["ACT"], map_location=self.device))
         self.policy.eval()
+
+        # ---------- SEGMENTATOR
+        self.segmentator = None
 
         # ---------- NORMALIZATION
         self.IMG_H = 256 # 480
@@ -81,8 +86,6 @@ class liralabILControl:
         self.fig, self.ax = plt.subplots()
         self.im = self.ax.imshow(np.zeros_like(frame))
 
-        self.seg_model = self.get_seg_model(self.models[APP]['SEG'])
-
     def preprocess_frame(self,frame_bgr):
         # BGR -> RGB
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -98,23 +101,6 @@ class liralabILControl:
         frame = self.normalize(frame)
         
         return frame.unsqueeze(0)  # [1,C,H,W]
-    
-    def get_seg_model(self,path):
-        model = smp.UnetPlusPlus(
-        encoder_name="densenet121",
-        encoder_weights=None,  # Non serve scaricare ImageNet in inferenza, carichiamo i nostri
-        in_channels=3,
-        classes=2,             # Sfondo (0) e Giugolare (1)
-        decoder_attention_type="scse"
-        )
-        
-        # Carica i pesi
-        state_dict = torch.load(path, map_location=self.device)
-        model.load_state_dict(state_dict)
-        model.to(self.device)
-        model.eval()  # Modalità inferenza
-        
-        return model
 
     def get_tran_from_state(self,state):
         return np.array([
@@ -148,17 +134,13 @@ class liralabILControl:
     def get_segmented_frame(self):
         ret, frame = self.cap.read()                                                            # frame [w, h, 3]
         if not ret: return None, None
-        #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = cv2.resize(frame, (self.IMG_W, self.IMG_H))                                     # frame [255, 255, 3]
-        seg_input = self.seg_normalization(image=frame)                                         # seg_input [3, 255, 255]
-        seg_input = seg_input['image'].unsqueeze(0).to(self.device)                             # seg_input [1, 3, 255, 255]
-        mask = self.seg_model(seg_input)                                                        # mask  [1, 2, 255, 255]
-        mask = torch.argmax(mask, dim=1).squeeze().cpu().numpy().astype(np.uint8) * 255.0       # mask  [255, 255]
-        frame = self.append_frame_and_mask(frame[:,:,0], mask)                                  # frame [255, 255, 3] => [R: frame, G: mask, B: unused]
+        mask = self.segmentator.get_segmented_mask(frame) * 255.0                               # mask [256, 256] uint
+        frame = cv2.resize(frame, (self.IMG_W, self.IMG_H))  
+        frame = self.append_frame_and_mask(frame[:,:,0], mask)                                  # frame [256, 256, 3] => [R: frame, G: mask, B: unused]
         
         self.im.set_data(frame / 255.0)
-        plt.pause(0.2)
-        return frame, mask                                                                      # uint8, uint8 [0-255]
+        plt.pause(0.05)
+        return frame, mask    
 
     def get_current_ee_from_initial(self):
         state = self.liralabSocket.read().split(';')
@@ -193,6 +175,7 @@ class liralabILControl:
         if self.app == "CAROT": self.start_carotid_app()
 
     def start_aorta_app(self):
+        self.segmentator = Segmentator(self.models['AORTA']['SEG'], self.models['AORTA']['SEG_MODEL'])
         frame_index = 0
         ee_new_belly_old = None
         while(True):

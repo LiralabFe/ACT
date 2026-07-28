@@ -43,7 +43,7 @@ args = {
     'num_eval_rollouts': 100,
     'lr_backbone': 1e-5,
     'batch_size': 64,
-    'trained_model_dir': 'experiments/AAA_10/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
+    'trained_model_dir': 'experiments/AAA_11/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
     'task_name': 'sim_transfer_cube_scripted',
     'dataset_dir': 'data/liralab/AAA/', # '../data/aloha/sim_transfer_cube_scripted',
     'chunk_size': 10,  # chunk_size is --> num_queries <-- !!!!
@@ -51,9 +51,9 @@ args = {
     'dim_feedforward': 4096, #3200,
     'lr': 1e-5,
     'kl_weight': 100,
-    'state_dim': 6,
-    'action_dim': 6,
-    'num_episodes': 27,
+    'state_dim': 6, # xyz, roll pitch yaw
+    'action_dim': 6, # xyz, roll pitch yaw
+    'num_episodes': 41,
     'episode_len': 600,
     'camera_names': ['top'],
     'num_encoder_layers': 5,

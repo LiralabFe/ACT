@@ -11,11 +11,13 @@ The new episode is saved in ```ROS/kinova_ws``` ros workspace.
 
 ## Generate the Dataset and Train ACT 
 Follow the following steps in sequence.
-
+### 0. Activate venv
+`source .venv/bin/activate`
 ### 1. Create the Masks
 Run the script `liralab_mask_creator.py` on the episodes folder you want to segment.  
 This will generate the corresponding mask inside the `SAVE_PATH` folder.
 
+`python -m liralab.liralab_mask_creator.py`
 
 ### 2. Create the H5 Dataset File
 Run the script `liralab_dataset_creator.py` on the episodes folder you want to process.
@@ -26,7 +28,7 @@ This will convert the CSV files, images, and masks into a single `.hdf5` file.
 Once all episodes have been processed:
 
 - Move all generated `.hdf5` files into the `dataset_dir` folder.
-- The `dataset_dir` path is specified inside the `args` structure in `models.py`.
+- The `dataset_dir` path is specified inside the `args` structure in `model.py`.
 
 ### 4. ❗ **IMPORTANT** ❗Rename the H5 Files 
 Rename all `.hdf5` files using the following format: episode_x.hdf5

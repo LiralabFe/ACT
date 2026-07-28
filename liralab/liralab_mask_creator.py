@@ -8,25 +8,12 @@ import matplotlib.pyplot as plt
 from liralab.utils.segmentator import Segmentator
 
 
-def get_transforms():
-    """Restituisce le stesse identiche trasformazioni usate nel validation."""
-    imagenet_mean = (0.485, 0.456, 0.406)
-    imagenet_std = (0.229, 0.224, 0.225)
-    
-    return A.Compose([
-        A.Resize(256, 256),
-        A.Normalize(mean=imagenet_mean, std=imagenet_std),
-        A.ToFloat(max_value=255.0),
-        ToTensorV2()
-    ])
-
 def sort_by_final_number(file_list):
     return sorted(file_list, key=lambda x: int(x.split('_')[-1].split('.')[0]))
 
 # Load del modello
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# model = get_model_unetplusplus("./segmentation_models/unetplusplus_imagenet_jugular.pth",device)
-# model = get_model_hardsmeg("./segmentation_models/hardsmeg/hardnet68.pth", device)
+# for Unetpp: ./segmentation_models/unetplusplus_imagenet_jugular.pth
 seg = Segmentator("./segmentation_models/hardsmeg/hardnet68.pth", "HarDMSEG")
 
 # Imposta la scheda di acquisizione (ad esempio, ID 0 per webcam o ID specifico per scheda di acquisizione)
