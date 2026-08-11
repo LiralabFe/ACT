@@ -23,10 +23,11 @@ class liralabILControl:
     def __init__(self, APP : str):
         assert APP in ['AORTA', 'JUGUL', 'CAROT'], f"{APP} not in ['AORTA', 'JUGUL', 'CAROT']"
 
+        self.use_force_sensor = False
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA_11/policy_epoch_8854.ckpt",
+                'ACT' : "experiments/AAA_19/policy_epoch_9000.ckpt",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'DATASET' : "data/liralab/AAA",
@@ -73,8 +74,8 @@ class liralabILControl:
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5000)
-        self.cap = cv2.VideoCapture(0)
+        self.liralabSocket = LiralabSocket(5003)
+        self.cap = cv2.VideoCapture('VideoAorta.mp4')
         ret, frame = self.cap.read()
         while frame.max() == 0:
             ret, frame = self.cap.read()
@@ -109,6 +110,11 @@ class liralabILControl:
         [state[9],state[10],state[11],state[2]],
         [0,0,0,1]
         ], dtype=np.float32)
+    
+    def get_force_from_state(self, state):
+        return np.array([
+            state[12], state[13], state[14]
+        ], dtype=np.float32)
 
     def append_frame_and_mask(self, frame, mask):
         # Converti in numpy array
@@ -133,6 +139,19 @@ class liralabILControl:
 
     def get_segmented_frame(self):
         ret, frame = self.cap.read()                                                            # frame [w, h, 3]
+        # ---------------- ROI ----------------
+        """
+        ROI_X = 150
+        ROI_Y = 80
+        ROI_W = 320
+        ROI_H = 320
+        # Assicura che la ROI sia valida
+        x = max(0, ROI_X)
+        y = max(0, ROI_Y)
+        w = min(ROI_W, frame.shape[:2][1] - x)
+        h = min(ROI_H, frame.shape[:2][0] - y)
+        frame = frame[y:y+h, x:x+w]"""
+        # -------------------------------------
         if not ret: return None, None
         mask = self.segmentator.get_segmented_mask(frame) * 255.0                               # mask [256, 256] uint
         frame = cv2.resize(frame, (self.IMG_W, self.IMG_H))  
@@ -144,10 +163,18 @@ class liralabILControl:
 
     def get_current_ee_from_initial(self):
         state = self.liralabSocket.read().split(';')
+        if self.use_force_sensor:
+            force = self.get_force_from_state(state)
         T_curr_0 = self.get_tran_from_state(state)                                              # T from current position to origin
         T_curr_initial = np.dot(self.T_0_initial, T_curr_0)                                     # T from current position to belly
         rpy = R.from_matrix(T_curr_initial[:3,:3]).as_euler('xyz').astype(np.float32)           # roll pitch yaw
-        ee_curr_initial = np.concatenate([T_curr_initial[:3,3], rpy])
+
+        if self.use_force_sensor:
+            ee_curr_initial = np.concatenate([T_curr_initial[:3,3], rpy, force])
+            print("Force: ",force)
+        else:
+            ee_curr_initial = np.concatenate([T_curr_initial[:3,3], rpy])
+
         return ee_curr_initial
 
     def app_achived_result(self, frame_index, mask):
@@ -176,7 +203,7 @@ class liralabILControl:
 
     def start_aorta_app(self):
         self.segmentator = Segmentator(self.models['AORTA']['SEG'], self.models['AORTA']['SEG_MODEL'])
-        frame_index = 0
+
         ee_new_belly_old = None
         while(True):
             #------------------------#
@@ -207,22 +234,23 @@ class liralabILControl:
             #--------------------#
             # Denormalize output #
             #--------------------#
-            ee_new_belly = ACT_output_action.cpu().squeeze()[0].detach().numpy() * self.qpos_std + self.qpos_mean
+            ee_new_belly = ACT_output_action.cpu().squeeze()[0].detach().numpy() * self.qpos_std[:6] + self.qpos_mean[:6]
+
             # Bounding box rotation
             limit = 10 * np.pi / 180  # ≈ 0.174532925 rad
             if ee_new_belly_old is not None:
                 if(np.abs((ee_new_belly[3] - ee_new_belly_old[3]) * 180.0 / np.pi) > 10):
-                    print("X: " + (ee_new_belly[3] - ee_new_belly_old[3]) * 180.0 / np.pi)
+                    print("X: " + str((ee_new_belly[3] - ee_new_belly_old[3]) * 180.0 / np.pi))
                 
                 if(np.abs((ee_new_belly[4] - ee_new_belly_old[4]) * 180.0 / np.pi) > 10):
-                    print("Y: " + (ee_new_belly[4] - ee_new_belly_old[4]) * 180.0 / np.pi)
+                    print("Y: " + str((ee_new_belly[4] - ee_new_belly_old[4]) * 180.0 / np.pi))
 
                 if(np.abs((ee_new_belly[5] - ee_new_belly_old[5]) * 180.0 / np.pi) > 10):
-                    print("Z: " + (ee_new_belly[5] - ee_new_belly_old[5]) * 180.0 / np.pi)
+                    print("Z: " + str((ee_new_belly[5] - ee_new_belly_old[5]) * 180.0 / np.pi) + ""
+                    f" with old {ee_new_belly_old[5] * 180.0 / np.pi} and new {ee_new_belly[5] * 180.0 / np.pi}")
             ee_new_belly_old = ee_new_belly
             ee_new_belly[3] = np.clip(ee_new_belly[3], -limit, limit)
             ee_new_belly[4] = np.clip(ee_new_belly[4], -limit, limit)
-            ee_new_belly[5] = np.clip(ee_new_belly[5], -limit, limit)
 
             eeR = R.from_euler('xyz', ee_new_belly[3:]).as_matrix()
             eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])

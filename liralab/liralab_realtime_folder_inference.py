@@ -6,7 +6,7 @@ import torch
 import cv2
 from liralab.utils.segmentator import Segmentator
 
-EPISODE = "AAA_ADN_5"
+EPISODE = "AAA_GC_4"
 cartella = f"/home/legion/ROS/kinova_ws/{EPISODE}/image/"
 cartella_mask = f"/home/legion/ROS/kinova_ws/{EPISODE}/mask/"
 ultimo_file_mostrato = None
@@ -46,8 +46,9 @@ while True:
 
                 # Overlay con colore rosso per la maschera
                 mask_color = (np.repeat(mask[:, :, np.newaxis], 3, axis=2) * color).astype("uint8") * 255.0
-
-                cv2.imshow("Ultima immagine", (mask_color + ori_frame)/255.0)
+                output = (mask_color + ori_frame)/255.0
+                output = cv2.resize(output, (1600,1200))
+                cv2.imshow("Ultima immagine", output)
 
     # necessario per aggiornare la finestra
     if cv2.waitKey(100) & 0xFF == 27:  # ESC per uscire

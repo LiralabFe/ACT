@@ -24,7 +24,7 @@ class Segmentator:
         self.transform = None        
         
         if model_type == "UnetPP": 
-            self._Segmentator_get_model_unetplusplus(weights, self.device)
+            self._Segmentator__get_model_unetplusplus(weights, self.device)
             self._Segmentator__get_transform_unetplusplus()
         if model_type == "HarDMSEG":
             self._Segmentator__get_model_hardmseg(weights, self.device)

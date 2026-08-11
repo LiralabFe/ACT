@@ -35,16 +35,28 @@ for EPISODE in sort_by_final_number(episodes_list):
 
     # Allocazione array
     actions = np.zeros((N, 6), dtype=np.float32)
-    qpos = np.zeros((N, 6), dtype=np.float32)
+    qpos = np.zeros((N, 9), dtype=np.float32)
     qvel = np.zeros((N, 7), dtype=np.float32)
     images = np.zeros((N, IMG_H, IMG_W, IMG_C), dtype=np.uint8)
 
     T_belly_0 = np.eye(4)   # Trasformazione da robot a ombelico (posizione iniziale)   [0T1]
     T_current_0 = np.eye(4) # Trasformazione da robot alla posizione attuale            [0T2]
+    T_rotation_fix = np.eye(4) # Rotazione di 90° sull'asse Z per i vecchi csv (pre sensore di forza)
 
     with open(CSV_PATH, newline="") as csvfile:
         reader = csv.DictReader(csvfile)
+        if "zForce" not in reader.fieldnames:
+            print(">> No force sensor here. SKIPPING")
+            e -= 1
+            continue
+        #    T_rotation_fix = np.array([
+        #    [0.0, 1.0, 0.0, 0.0],
+        #    [-1.0,  0.0, 0.0, 0.0],
+        #    [0.0,  0.0, 1.0, 0.0],
+        #    [0.0,  0.0, 0.0, 1.0],
+        #], dtype=float)
         
+
         for i, row in enumerate(reader):
             if i >= N:
                 break
@@ -62,9 +74,16 @@ for EPISODE in sort_by_final_number(episodes_list):
                 [float(row["r21"]), float(row["r22"]), float(row["r23"])],
                 [float(row["r31"]), float(row["r32"]), float(row["r33"])]
             ])
+            
+            force = np.array([
+                float(row["xForce"]),
+                float(row["yForce"]),
+                float(row["zForce"])
+            ])
 
             T_current_0[:3,:3] = Rmat
             T_current_0[0:3,3] = pos
+            T_current_0 = T_current_0 @ T_rotation_fix
 
             if i == 0:
                 T_belly_0[:3,:3] = Rmat
@@ -76,7 +95,8 @@ for EPISODE in sort_by_final_number(episodes_list):
             ee_pose_belly = np.concatenate([T_current_belly[:3,3], euler])
 
             actions[i - 1 if i > 0 else i] = ee_pose_belly # PRIMA usavamo solo q
-            qpos[i] = ee_pose_belly
+            qpos[i][:6] = ee_pose_belly
+            qpos[i][6:] = force
 
             # Caricamento immagine
             img_path = MAIN_PATH + "/image/" + row["image"]
