@@ -17,6 +17,7 @@ from liralab.liralab_socket import LiralabSocket
 from scipy.spatial.transform import Rotation as R
 import json
 from pathlib import Path
+from collections import deque
 from liralab.utils.segmentator import Segmentator
 
 class liralabILControl:
@@ -30,8 +31,11 @@ class liralabILControl:
                 'ACT' : "experiments/AAA_22/policy_epoch_8078.ckpt",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
                 'SEG_MODEL' : "HarDMSEG",
-                'MIN_SEGMENTED_PIXEL' : 100,
                 'MIN_SUCCESS_FRAMES' : 40,
+                'BUFFER_FRAMES' : 100,
+                'FRAME_TO_SUCCESS' : 40,
+                'MIN_DIAMETER' : 7,
+                'PIXEL_TO_MM' : 1.0/1.8, # 1.8 pixels = 1mm nella ROI attuale ( Zoom: 27 Hz)
             },
             'JUGUL' : {
                 'ACT' : "experiments/JVP/policy_last.ckpt",
@@ -72,12 +76,13 @@ class liralabILControl:
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5002)
-        self.cap = cv2.VideoCapture("VideoAorta.mp4")
+        self.liralabSocket = LiralabSocket(5000)
+        self.cap = cv2.VideoCapture(0)
         ret, frame = self.cap.read()
         while frame.max() == 0:
             ret, frame = self.cap.read()
             time.sleep(0.5)
+        print(frame.shape)
         plt.imshow(frame)
         plt.show()
 
@@ -147,10 +152,9 @@ class liralabILControl:
 
         return ";".join(f"{v:.4f}" for v in values)
 
-    def get_segmented_frame(self):
+    def get_segmented_frame(self, pixel_to_mm = 10):
         ret, frame = self.cap.read()                                                            # frame [w, h, 3]
         # ---------------- ROI ----------------
-        
         ROI_X = 150
         ROI_Y = 80
         ROI_W = 320
@@ -161,15 +165,43 @@ class liralabILControl:
         w = min(ROI_W, frame.shape[:2][1] - x)
         h = min(ROI_H, frame.shape[:2][0] - y)
         frame = frame[y:y+h, x:x+w]
+        if frame.shape[0] != frame.shape[1]: raise ValueError(f"Frame must be squared: {frame.shape[:2]}")
         # -------------------------------------
         if not ret: return None, None
         mask = self.segmentator.get_segmented_mask(frame) * 255.0                               # mask [256, 256] uint
-        frame = cv2.resize(frame, (self.IMG_W, self.IMG_H))  
+        frame = cv2.resize(frame, (self.IMG_W, self.IMG_H))
+        vis_frame = frame.copy()
         frame = self.append_frame_and_mask(frame[:,:,0], mask)                                  # frame [256, 256, 3] => [R: frame, G: mask, B: unused]
         
-        self.im.set_data(frame / 255.0)
+        # ============================================================
+        # Enclosing circle
+        # ============================================================
+        points = cv2.findNonZero(mask)
+        diameter = 0.0
+        if points is not None:
+            (cx, cy), radius = cv2.minEnclosingCircle(points)
+
+            center = (int(cx), int(cy))
+            radius = int(radius)
+
+            # Prendo il canale blu come array contiguo
+            blue = vis_frame[:, :, 0].copy()
+
+            # Disegno SOLO sul canale blu
+            cv2.circle(blue, center, radius, 255, 1)
+
+            # Centro opzionale
+            cv2.circle(blue, center, 2, 255, -1)
+
+            # Rimetto il canale modificato nel frame
+            vis_frame[:, :, 0] = blue
+            print(vis_frame.shape)
+            diameter = 2.0 * radius * pixel_to_mm
+        # ============================================================
+
+        self.im.set_data(vis_frame / 255.0)
         plt.pause(0.05)
-        return frame, mask    
+        return frame, mask, diameter  
 
     def get_current_ee_from_initial(self):
         state = self.liralabSocket.read().split(';')
@@ -212,8 +244,8 @@ class liralabILControl:
 
     def start_aorta_app(self):
         self.segmentator = Segmentator(self.models['AORTA']['SEG'], self.models['AORTA']['SEG_MODEL'])
-
         ee_new_belly_old = None
+        diameters = deque(maxlen=self.models['AORTA']['BUFFER_FRAMES'])
         while(True):
             #------------------------#
             # Read state from socket #
@@ -223,10 +255,24 @@ class liralabILControl:
             #--------------------------------#
             # Capture frame for segmentation #
             #--------------------------------#
-            frame, mask = self.get_segmented_frame()
+            frame, mask, diameter = self.get_segmented_frame(self.models['AORTA']['PIXEL_TO_MM'])
             if frame is None: break
-            # result, frame_index, aorta_pixels = self.app_achived_result(frame_index, mask)
-            # if result: return # ---- SUCCESS ----
+
+            #-------------------#
+            # Success Condition #
+            #-------------------#
+            diameters.append(diameter)
+            above_threshold = 0
+            mean_diameter = 0
+            print(f"Current diameter {diameter}")
+            for i in range(len(diameters)):
+                if diameters[i] > self.models['AORTA']['MIN_DIAMETER']:
+                    above_threshold += 1
+                    mean_diameter += diameters[i]
+                if above_threshold > self.models['AORTA']['FRAME_TO_SUCCESS']:
+                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold}")
+                    return
+            print(f"Above: {above_threshold}")
 
             #-------------------------#
             # Normalize input for ACT #
