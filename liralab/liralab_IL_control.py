@@ -23,26 +23,23 @@ class liralabILControl:
     def __init__(self, APP : str):
         assert APP in ['AORTA', 'JUGUL', 'CAROT'], f"{APP} not in ['AORTA', 'JUGUL', 'CAROT']"
 
-        self.use_force_sensor = False
+        self.use_force_sensor = True
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA_19/policy_epoch_9000.ckpt",
+                'ACT' : "experiments/AAA_22/policy_epoch_8078.ckpt",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
                 'SEG_MODEL' : "HarDMSEG",
-                'DATASET' : "data/liralab/AAA",
                 'MIN_SEGMENTED_PIXEL' : 100,
                 'MIN_SUCCESS_FRAMES' : 40,
             },
             'JUGUL' : {
                 'ACT' : "experiments/JVP/policy_last.ckpt",
                 'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
-                'DATASET' : "data/liralab/JVP",
             },
             'CAROT' : {
                 'ACT' : "experiments/CAS/policy_last.ckpt",
                 'SEG' : "segmentation_models/unetplusplus_imagenet_jugular.pth",
-                'DATASET' : "data/liralab/CAS",
             },
         }
 
@@ -67,15 +64,16 @@ class liralabILControl:
         std=[0.229, 0.224, 0.225]
         self.normalize = transforms.Normalize(mean, std)
         self.seg_normalization = A.Compose([A.Normalize(mean, std),A.ToFloat(max_value=255.0),ToTensorV2()])
-        self.dataset_stats = get_norm_stats(self.models[APP]['DATASET'])
+        self.dataset_stats = self.get_norm_stat(args)
+
         self.qpos_mean = np.array(self.dataset_stats['qpos_mean'], dtype=np.float32)
         self.qpos_std = np.array(self.dataset_stats['qpos_std'], dtype=np.float32)
         self.T_initial_0 = None
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5003)
-        self.cap = cv2.VideoCapture('VideoAorta.mp4')
+        self.liralabSocket = LiralabSocket(5002)
+        self.cap = cv2.VideoCapture("VideoAorta.mp4")
         ret, frame = self.cap.read()
         while frame.max() == 0:
             ret, frame = self.cap.read()
@@ -86,6 +84,18 @@ class liralabILControl:
         plt.ion()
         self.fig, self.ax = plt.subplots()
         self.im = self.ax.imshow(np.zeros_like(frame))
+
+    def get_norm_stat(self, args):
+        # New arsg.jsons have dataset' stats in it, otherwise recalculate them from the actual dataset
+        if 'dataset_stats' in args and args['dataset_stats'] is not None:
+            return {
+                "action_mean" : np.array(args['dataset_stats']["action_mean"]),
+                "action_std" : np.array(args['dataset_stats']["action_std"]),
+                "qpos_mean" : np.array(args['dataset_stats']["qpos_mean"]),
+                "qpos_std" : np.array(args['dataset_stats']["qpos_std"])
+            }
+        else:
+            return get_norm_stats(args['dataset_dir'])
 
     def preprocess_frame(self,frame_bgr):
         # BGR -> RGB
@@ -140,7 +150,7 @@ class liralabILControl:
     def get_segmented_frame(self):
         ret, frame = self.cap.read()                                                            # frame [w, h, 3]
         # ---------------- ROI ----------------
-        """
+        
         ROI_X = 150
         ROI_Y = 80
         ROI_W = 320
@@ -150,7 +160,7 @@ class liralabILControl:
         y = max(0, ROI_Y)
         w = min(ROI_W, frame.shape[:2][1] - x)
         h = min(ROI_H, frame.shape[:2][0] - y)
-        frame = frame[y:y+h, x:x+w]"""
+        frame = frame[y:y+h, x:x+w]
         # -------------------------------------
         if not ret: return None, None
         mask = self.segmentator.get_segmented_mask(frame) * 255.0                               # mask [256, 256] uint
@@ -171,7 +181,6 @@ class liralabILControl:
 
         if self.use_force_sensor:
             ee_curr_initial = np.concatenate([T_curr_initial[:3,3], rpy, force])
-            print("Force: ",force)
         else:
             ee_curr_initial = np.concatenate([T_curr_initial[:3,3], rpy])
 
