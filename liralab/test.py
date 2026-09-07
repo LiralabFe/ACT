@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Leggi il CSV
-df = pd.read_csv("/home/legion/ROS/kinova_ws/AAA_SF_30/AAA_SF_30.csv")
+df = pd.read_csv("/home/legion/ROS/kinova_ws/TEST/TEST.csv")
 
 # Converti il tempo da nanosecondi a secondi
 t = (df["timestamp"] - df["timestamp"].iloc[0]) * 1e-9

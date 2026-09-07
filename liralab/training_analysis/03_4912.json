@@ -1,0 +1,74 @@
+{
+    "score":6,
+    "num_epochs": 4912,
+    "eval_interval_epochs": 500,
+    "num_eval_rollouts": 100,
+    "lr_backbone": 1e-05,
+    "batch_size": 16,
+    "trained_model_dir": "experiments/AAA_3/",
+    "task_name": "sim_transfer_cube_scripted",
+    "dataset_dir": "data/liralab/AAA_force_sensor/",
+    "chunk_size": 256,
+    "d_model": 512,
+    "dim_feedforward": 1024,
+    "lr": 5e-06,
+    "kl_weight": 50,
+    "state_dim": 9,
+    "action_dim": 6,
+    "num_episodes": 60,
+    "episode_len": 600,
+    "camera_names": [
+        "top"
+    ],
+    "num_encoder_layers": 5,
+    "num_decoder_layers": 7,
+    "backbone": "resnet34",
+    "nhead": 32,
+    "weight_decay": 0.0001,
+    "dropout": 0.1,
+    "position_embedding": "learned",
+    "normalize_before": false,
+    "fps": 10,
+    "latent_dim": 32,
+    "note": "Fatte con le nuove roi del dataset (croppate e centrate)",
+    "dataset_stats": {
+        "action_mean": [
+            0.01744033768773079,
+            -0.04877852275967598,
+            0.015521610155701637,
+            0.0035166197922080755,
+            -0.010300279594957829,
+            -0.00866104755550623
+        ],
+        "action_std": [
+            0.015015042386949062,
+            0.018509984016418457,
+            0.009999999776482582,
+            0.03563141077756882,
+            0.033393170684576035,
+            0.08501072227954865
+        ],
+        "qpos_mean": [
+            0.01744033768773079,
+            -0.04877852275967598,
+            0.015521610155701637,
+            0.003516620257869363,
+            -0.010300279594957829,
+            -0.008661048486828804,
+            -0.1419193297624588,
+            1.1263984441757202,
+            -4.487080097198486
+        ],
+        "qpos_std": [
+            0.015015042386949062,
+            0.018509984016418457,
+            0.009999999776482582,
+            0.03563141077756882,
+            0.033393170684576035,
+            0.08501072227954865,
+            0.842318058013916,
+            1.1535592079162598,
+            2.872495651245117
+        ]
+    }
+}

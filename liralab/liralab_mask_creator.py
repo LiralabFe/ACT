@@ -24,7 +24,7 @@ seg = Segmentator("./segmentation_models/hardsmeg/hardnet68.pth", "HarDMSEG")
 #cv2.namedWindow("Model Output View")
 color = np.array([0, 0, 255], dtype='uint8')  # Rosso
 
-EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE"
+EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE/force_sensor"
 episodes_list = [f for f in os.listdir(EPISODES_PATH) if os.path.isdir(os.path.join(EPISODES_PATH, f))]
 e = 0
 for EPISODE in sort_by_final_number(episodes_list):
@@ -50,9 +50,16 @@ for EPISODE in sort_by_final_number(episodes_list):
         #if not ret:
         #    break  # Esce se il video è terminato
         frame = cv2.imread(PATH + image_path)
+        height, width = frame.shape[:2]
+        if height == 256:
+            print(f"{EPISODE} was already DONE.")
+            break
+        new_height = 256
+        new_width = int(width * new_height / height)
+        frame = cv2.resize(frame, (new_width, new_height))
 
         # Crop dell'immagine
-        # frame = frame[200:900, 475:1475]
+        frame = frame[:, 49:305]
         H, W, _ = frame.shape
         ori_frame = frame.copy()
 
@@ -67,6 +74,7 @@ for EPISODE in sort_by_final_number(episodes_list):
         mask_color = (np.repeat(mask[:, :, np.newaxis], 3, axis=2) * color).astype("uint8") * 255.0
 
         cv2.imwrite(SAVE_PATH + "mask_" + image_path, mask_color)
+        cv2.imwrite(PATH + image_path, ori_frame)
         cv2.imshow(EPISODE,(mask_color + ori_frame)/255.0)
         
         # Premi "Invio" per uscire

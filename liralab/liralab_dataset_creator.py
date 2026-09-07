@@ -15,7 +15,7 @@ Usage:
 def sort_by_final_number(file_list):
     return sorted(file_list, key=lambda x: int(x.split('_')[-1].split('.')[0]))
 
-EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE"
+EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE/force_sensor"
 episodes_list = [f for f in os.listdir(EPISODES_PATH) if os.path.isdir(os.path.join(EPISODES_PATH, f))]
 e = 0
 for EPISODE in sort_by_final_number(episodes_list):
@@ -24,7 +24,7 @@ for EPISODE in sort_by_final_number(episodes_list):
     print("#"*50)
     print(f"###### DONE {e}/{len(episodes_list)} episodes")
 
-    MAIN_PATH = "/home/legion/ROS/kinova_ws/AORTE/" + EPISODE + "/"
+    MAIN_PATH = EPISODES_PATH + "/" + EPISODE + "/"
     CSV_PATH = MAIN_PATH + EPISODE + ".csv"
     HDF5_PATH = MAIN_PATH + "../" + f"episode_{e}.hdf5"
     N = 600
@@ -110,7 +110,7 @@ for EPISODE in sort_by_final_number(episodes_list):
             # Converti in numpy array
             r = np.array(img, dtype=np.uint8)
             g = np.array(mask, dtype=np.uint8)
-            b = np.zeros_like(r, dtype=np.uint8)
+            b = np.array(mask, dtype=np.uint8) # np.zeros_like(r, dtype=np.uint8)
 
             # Stack nei canali RGB
             rgb = np.stack([r, g, b], axis=2)

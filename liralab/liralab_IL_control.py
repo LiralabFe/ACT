@@ -24,17 +24,16 @@ class liralabILControl:
     def __init__(self, APP : str):
         assert APP in ['AORTA', 'JUGUL', 'CAROT'], f"{APP} not in ['AORTA', 'JUGUL', 'CAROT']"
 
-        self.use_force_sensor = True
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA_22/policy_epoch_8078.ckpt",
+                'ACT' : "experiments/AAA_30/policy_epoch_5000.ckpt",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'MIN_SUCCESS_FRAMES' : 40,
                 'BUFFER_FRAMES' : 100,
-                'FRAME_TO_SUCCESS' : 40,
-                'MIN_DIAMETER' : 7,
+                'FRAME_TO_SUCCESS' : 60,
+                'MIN_DIAMETER' : 9,
                 'PIXEL_TO_MM' : 1.0/1.8, # 1.8 pixels = 1mm nella ROI attuale ( Zoom: 27 Hz)
             },
             'JUGUL' : {
@@ -52,6 +51,8 @@ class liralabILControl:
         with open(args_path, "r") as f:
             args = json.load(f)
             liralab.model.args = args
+        
+        self.use_force_sensor = args['state_dim'] == 9
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.policy = ACTPolicy().to(self.device)
@@ -76,19 +77,22 @@ class liralabILControl:
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5000)
+        self.liralabSocket = LiralabSocket(5012)
         self.cap = cv2.VideoCapture(0)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         ret, frame = self.cap.read()
-        while frame.max() == 0:
+        while frame is None or frame.max() == 0:
             ret, frame = self.cap.read()
             time.sleep(0.5)
+        frame = cv2.resize(frame, (640, 360))
         print(frame.shape)
         plt.imshow(frame)
         plt.show()
 
         plt.ion()
         self.fig, self.ax = plt.subplots()
-        self.im = self.ax.imshow(np.zeros_like(frame))
+        self.im = self.ax.imshow(np.zeros((256,256,3)))
 
     def get_norm_stat(self, args):
         # New arsg.jsons have dataset' stats in it, otherwise recalculate them from the actual dataset
@@ -104,7 +108,7 @@ class liralabILControl:
 
     def preprocess_frame(self,frame_bgr):
         # BGR -> RGB
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        frame_rgb = frame_bgr#cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
         # resize
         frame_rgb = cv2.resize(frame_rgb, (self.IMG_W, self.IMG_H))
@@ -115,7 +119,6 @@ class liralabILControl:
 
         frame /= 255.0
         frame = self.normalize(frame)
-        
         return frame.unsqueeze(0)  # [1,C,H,W]
 
     def get_tran_from_state(self,state):
@@ -135,7 +138,7 @@ class liralabILControl:
         # Converti in numpy array
         r = np.array(frame, dtype=np.uint8)
         g = np.array(mask, dtype=np.uint8)
-        b = np.zeros_like(r, dtype=np.uint8)
+        b = np.array(mask, dtype=np.uint8) # np.zeros_like(r, dtype=np.uint8)
 
         # Stack nei canali RGB
         rgb = np.stack([r, g, b], axis=2)
@@ -154,11 +157,12 @@ class liralabILControl:
 
     def get_segmented_frame(self, pixel_to_mm = 10):
         ret, frame = self.cap.read()                                                            # frame [w, h, 3]
+        frame = cv2.resize(frame, (640, 360))
         # ---------------- ROI ----------------
-        ROI_X = 150
-        ROI_Y = 80
-        ROI_W = 320
-        ROI_H = 320
+        ROI_X = 199 # 150
+        ROI_Y = 59  # 80
+        ROI_W = 455-ROI_X # 320
+        ROI_H = 315-ROI_Y # 320
         # Assicura che la ROI sia valida
         x = max(0, ROI_X)
         y = max(0, ROI_Y)
@@ -176,9 +180,12 @@ class liralabILControl:
         # ============================================================
         # Enclosing circle
         # ============================================================
+        num_labels, labels = cv2.connectedComponents(mask.astype(np.uint8))
+        num_areas = num_labels - 1  # esclude lo sfondo
+
         points = cv2.findNonZero(mask)
         diameter = 0.0
-        if points is not None:
+        if points is not None and num_areas == 1:
             (cx, cy), radius = cv2.minEnclosingCircle(points)
 
             center = (int(cx), int(cy))
@@ -195,7 +202,6 @@ class liralabILControl:
 
             # Rimetto il canale modificato nel frame
             vis_frame[:, :, 0] = blue
-            print(vis_frame.shape)
             diameter = 2.0 * radius * pixel_to_mm
         # ============================================================
 
@@ -207,6 +213,8 @@ class liralabILControl:
         state = self.liralabSocket.read().split(';')
         if self.use_force_sensor:
             force = self.get_force_from_state(state)
+            print(f"{force}")
+
         T_curr_0 = self.get_tran_from_state(state)                                              # T from current position to origin
         T_curr_initial = np.dot(self.T_0_initial, T_curr_0)                                     # T from current position to belly
         rpy = R.from_matrix(T_curr_initial[:3,:3]).as_euler('xyz').astype(np.float32)           # roll pitch yaw
@@ -243,6 +251,7 @@ class liralabILControl:
         if self.app == "CAROT": self.start_carotid_app()
 
     def start_aorta_app(self):
+        first = True
         self.segmentator = Segmentator(self.models['AORTA']['SEG'], self.models['AORTA']['SEG_MODEL'])
         ee_new_belly_old = None
         diameters = deque(maxlen=self.models['AORTA']['BUFFER_FRAMES'])
@@ -251,6 +260,10 @@ class liralabILControl:
             # Read state from socket #
             #------------------------#
             ee_curr_belly = self.get_current_ee_from_initial()
+            if first:
+                first = False
+                start = time.perf_counter()
+                print(">>> START TIMER <<<")
 
             #--------------------------------#
             # Capture frame for segmentation #
@@ -264,15 +277,16 @@ class liralabILControl:
             diameters.append(diameter)
             above_threshold = 0
             mean_diameter = 0
-            print(f"Current diameter {diameter}")
-            for i in range(len(diameters)):
-                if diameters[i] > self.models['AORTA']['MIN_DIAMETER']:
-                    above_threshold += 1
-                    mean_diameter += diameters[i]
-                if above_threshold > self.models['AORTA']['FRAME_TO_SUCCESS']:
-                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold}")
-                    return
-            print(f"Above: {above_threshold}")
+            #for i in range(len(diameters)):
+                #if diameters[i] > self.models['AORTA']['MIN_DIAMETER']:
+                    #above_threshold += 1
+                    #mean_diameter += diameters[i]
+                #if above_threshold > self.models['AORTA']['FRAME_TO_SUCCESS']:
+                    #print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+                    #elapsed = time.perf_counter() - start - 3.2
+                    #print(f"Tempo: {elapsed:.2f} s")
+                    #return
+            #if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
 
             #-------------------------#
             # Normalize input for ACT #
@@ -292,7 +306,7 @@ class liralabILControl:
             ee_new_belly = ACT_output_action.cpu().squeeze()[0].detach().numpy() * self.qpos_std[:6] + self.qpos_mean[:6]
 
             # Bounding box rotation
-            limit = 10 * np.pi / 180  # ≈ 0.174532925 rad
+            limit = 5 * np.pi / 180  # ≈ 0.174532925 rad
             if ee_new_belly_old is not None:
                 if(np.abs((ee_new_belly[3] - ee_new_belly_old[3]) * 180.0 / np.pi) > 10):
                     print("X: " + str((ee_new_belly[3] - ee_new_belly_old[3]) * 180.0 / np.pi))

@@ -1,0 +1,74 @@
+{
+    "score": 2,
+    "num_epochs": 9000,
+    "eval_interval_epochs": 500,
+    "num_eval_rollouts": 100,
+    "lr_backbone": 1e-06,
+    "batch_size": 128,
+    "trained_model_dir": "experiments/AAA_6/",
+    "task_name": "sim_transfer_cube_scripted",
+    "dataset_dir": "data/liralab/AAA_force_sensor/",
+    "chunk_size": 30,
+    "d_model": 512,
+    "dim_feedforward": 3200,
+    "lr": 8e-05,
+    "kl_weight": 5,
+    "state_dim": 9,
+    "action_dim": 6,
+    "num_episodes": 75,
+    "episode_len": 600,
+    "camera_names": [
+        "top"
+    ],
+    "num_encoder_layers": 5,
+    "num_decoder_layers": 7,
+    "backbone": "resnet34",
+    "nhead": 32,
+    "weight_decay": 0.0001,
+    "dropout": 0.1,
+    "position_embedding": "learned",
+    "normalize_before": false,
+    "fps": 10,
+    "latent_dim": 32,
+    "note": "Tentando di seguire i suggerimenti di https://docs.google.com/document/d/1FVIZfoALXg_ZkYKaYVh-qOlaXveq5CtvJHXkY25eYhs/edit?tab=t.0#heading=h.2xiz3mdijyv4",
+    "dataset_stats": {
+        "action_mean": [
+            0.01729658804833889,
+            -0.04519890248775482,
+            0.014302129857242107,
+            0.009916258044540882,
+            -0.010701283812522888,
+            -0.009922340512275696
+        ],
+        "action_std": [
+            0.013881511054933071,
+            0.01875975914299488,
+            0.009999999776482582,
+            0.04031921550631523,
+            0.03103477880358696,
+            0.07825858891010284
+        ],
+        "qpos_mean": [
+            0.01729658804833889,
+            -0.04519890248775482,
+            0.014302129857242107,
+            0.009916257113218307,
+            -0.010701282881200314,
+            -0.009922340512275696,
+            -0.17596453428268433,
+            1.0303367376327515,
+            -4.347177982330322
+        ],
+        "qpos_std": [
+            0.013881511054933071,
+            0.01875975914299488,
+            0.009999999776482582,
+            0.04031921550631523,
+            0.03103477880358696,
+            0.07825858891010284,
+            0.7955185770988464,
+            1.1116517782211304,
+            2.7816171646118164
+        ]
+    }
+}

@@ -42,31 +42,31 @@ args = {
     'eval_interval_epochs': 500,
     'num_eval_rollouts': 100,
     'lr_backbone': 1e-5,
-    'batch_size': 16,
-    'trained_model_dir': 'experiments/AAA_23/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
+    'batch_size': 64,
+    'trained_model_dir': 'experiments/AAA_30/', # '../experiments/aloha/sim_transfer_cube_scripted/second_workstream/',
     'task_name': 'sim_transfer_cube_scripted',
     'dataset_dir': 'data/liralab/AAA_force_sensor/', # '../data/aloha/sim_transfer_cube_scripted',
-    'chunk_size': 300,  # chunk_size is --> num_queries <-- !!!!
+    'chunk_size': 32,  # chunk_size is --> num_queries <-- !!!!
     'd_model': 512,  # d_model
     'dim_feedforward': 1024,
     'lr': 5e-6,
-    'kl_weight': 50,
+    'kl_weight': 10,
     'state_dim': 9, # 6: xyz, rpy || 9: xyz, rpy, fx, fy, fz
     'action_dim': 6, # xyz, roll pitch yaw
-    'num_episodes': 51,
+    'num_episodes': 100,
     'episode_len': 600,
     'camera_names': ['top'],
-    'num_encoder_layers': 5,
+    'num_encoder_layers': 6,
     'num_decoder_layers': 7,
     'backbone': 'resnet34',
-    'nhead': 32,
+    'nhead': 64,
     'weight_decay': 1e-4,
     'dropout': 0.10,
     'position_embedding': 'learned',
     'normalize_before': False,
     'fps': 10,
     'latent_dim': 32,
-    'note': "Con chunk size molto grande e nuovo sensore di forza",
+    'note': "",
     'dataset_stats': None # leave it None, will be overwritten during training
 }
 
