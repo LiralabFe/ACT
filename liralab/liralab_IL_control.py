@@ -27,12 +27,12 @@ class liralabILControl:
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA_30/policy_epoch_5000.ckpt",
+                'ACT' : "experiments/AAA_30/policy_epoch_4500.ckpt",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
                 'SEG_MODEL' : "HarDMSEG",
-                'MIN_SUCCESS_FRAMES' : 40,
+                'MIN_SUCCESS_FRAMES' : 15,
                 'BUFFER_FRAMES' : 100,
-                'FRAME_TO_SUCCESS' : 60,
+                'FRAME_TO_SUCCESS' : 15,
                 'MIN_DIAMETER' : 9,
                 'PIXEL_TO_MM' : 1.0/1.8, # 1.8 pixels = 1mm nella ROI attuale ( Zoom: 27 Hz)
             },
@@ -77,7 +77,7 @@ class liralabILControl:
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5012)
+        self.liralabSocket = LiralabSocket(5003)
         self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -278,15 +278,15 @@ class liralabILControl:
             above_threshold = 0
             mean_diameter = 0
             #for i in range(len(diameters)):
-                #if diameters[i] > self.models['AORTA']['MIN_DIAMETER']:
-                    #above_threshold += 1
-                    #mean_diameter += diameters[i]
-                #if above_threshold > self.models['AORTA']['FRAME_TO_SUCCESS']:
-                    #print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
-                    #elapsed = time.perf_counter() - start - 3.2
-                    #print(f"Tempo: {elapsed:.2f} s")
-                    #return
-            #if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
+            #    if diameters[i] > self.models['AORTA']['MIN_DIAMETER']:
+            #        above_threshold += 1
+            #        mean_diameter += diameters[i]
+            #    if above_threshold > self.models['AORTA']['FRAME_TO_SUCCESS']:
+            #        print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+            #        elapsed = time.perf_counter() - start - 3.2
+            #        print(f"Tempo: {elapsed:.2f} s")
+            #        return
+            if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
 
             #-------------------------#
             # Normalize input for ACT #
