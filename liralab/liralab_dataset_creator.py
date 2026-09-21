@@ -15,9 +15,9 @@ Usage:
 def sort_by_final_number(file_list):
     return sorted(file_list, key=lambda x: int(x.split('_')[-1].split('.')[0]))
 
-EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE/force_sensor"
+EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE/random_position"
 episodes_list = [f for f in os.listdir(EPISODES_PATH) if os.path.isdir(os.path.join(EPISODES_PATH, f))]
-e = 0
+e = 131
 for EPISODE in sort_by_final_number(episodes_list):
     print("#"*50)
     print("#"*10 + f" PROCESSING EPISODE {EPISODE} " + "#"*10)
@@ -94,7 +94,10 @@ for EPISODE in sort_by_final_number(episodes_list):
             euler = R.from_matrix(T_current_belly[:3,:3]).as_euler('xyz').astype(np.float32)
             ee_pose_belly = np.concatenate([T_current_belly[:3,3], euler])
 
-            actions[i - 1 if i > 0 else i] = ee_pose_belly # PRIMA usavamo solo q
+            if i > 0:
+                actions[i - 1] = ee_pose_belly
+            if i == N - 1:
+                actions[i] = ee_pose_belly
             qpos[i][:6] = ee_pose_belly
             qpos[i][6:] = force
 

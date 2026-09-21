@@ -27,7 +27,7 @@ class liralabILControl:
         self.app = APP
         self.models = {
             'AORTA' : {
-                'ACT' : "experiments/AAA_30/policy_epoch_4500.ckpt",
+                'ACT' : "experiments/AAA_23/policy_epoch_7000.ckpt",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'MIN_SUCCESS_FRAMES' : 15,
@@ -77,8 +77,8 @@ class liralabILControl:
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5003)
-        self.cap = cv2.VideoCapture(0)
+        self.liralabSocket = LiralabSocket(5020)
+        self.cap = cv2.VideoCapture(4)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         ret, frame = self.cap.read()
@@ -242,6 +242,7 @@ class liralabILControl:
     def start_app(self):
         # Register init pose
         state = self.liralabSocket.read().split(';')[:-1]
+
         self.T_initial_0 = self.get_tran_from_state(state)
         self.T_0_initial = np.linalg.inv(self.T_initial_0)
         self.liralabSocket.write("RUN")
@@ -277,15 +278,15 @@ class liralabILControl:
             diameters.append(diameter)
             above_threshold = 0
             mean_diameter = 0
-            #for i in range(len(diameters)):
-            #    if diameters[i] > self.models['AORTA']['MIN_DIAMETER']:
-            #        above_threshold += 1
-            #        mean_diameter += diameters[i]
-            #    if above_threshold > self.models['AORTA']['FRAME_TO_SUCCESS']:
-            #        print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
-            #        elapsed = time.perf_counter() - start - 3.2
-            #        print(f"Tempo: {elapsed:.2f} s")
-            #        return
+            for i in range(len(diameters)):
+                if diameters[i] > self.models['AORTA']['MIN_DIAMETER']:
+                    above_threshold += 1
+                    mean_diameter += diameters[i]
+                if above_threshold > self.models['AORTA']['FRAME_TO_SUCCESS']:
+                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+                    elapsed = time.perf_counter() - start - 3.2
+                    print(f"Tempo: {elapsed:.2f} s")
+                    return
             if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
 
             #-------------------------#
@@ -318,8 +319,8 @@ class liralabILControl:
                     print("Z: " + str((ee_new_belly[5] - ee_new_belly_old[5]) * 180.0 / np.pi) + ""
                     f" with old {ee_new_belly_old[5] * 180.0 / np.pi} and new {ee_new_belly[5] * 180.0 / np.pi}")
             ee_new_belly_old = ee_new_belly
-            ee_new_belly[3] = np.clip(ee_new_belly[3], -limit, limit)
-            ee_new_belly[4] = np.clip(ee_new_belly[4], -limit, limit)
+            ee_new_belly[3] = 0.0 #np.clip(ee_new_belly[3], -limit, limit)
+            ee_new_belly[4] = 0.0 #np.clip(ee_new_belly[4], -limit, limit)
 
             eeR = R.from_euler('xyz', ee_new_belly[3:]).as_matrix()
             eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])

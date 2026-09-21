@@ -5,6 +5,8 @@ e il formato degli input siano corretti.
 """
 import torch
 from lerobot.policies.diffusion import DiffusionPolicy
+from lerobot.policies.act import ACTPolicy
+from lerobot.policies.smolvla import SmolVLAPolicy
 from lerobot.policies import make_pre_post_processors
 from liralab.utils.segmentator import Segmentator
 from liralab.liralab_socket import LiralabSocket
@@ -24,7 +26,7 @@ class liralabLeRobotControl:
         self.params ={
             'AORTA' : 
             {
-                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_4/checkpoints/010000/pretrained_model",
+                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_8/checkpoints/020000/pretrained_model",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'MIN_SUCCESS_FRAMES' : 15,
@@ -38,8 +40,10 @@ class liralabLeRobotControl:
         # ---------- LEROBOT POLICY STUFF
         self.CHECKPOINT_DIR = self.params['AORTA']['MODEL']
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    
+        # self.policy = ACTPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
         self.policy = DiffusionPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
+        #self.policy = SmolVLAPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
         self.policy.eval()
 
         self.preprocess, self.postprocess = make_pre_post_processors(
@@ -60,8 +64,8 @@ class liralabLeRobotControl:
         self.T_0_initial = None
 
         self.use_force_sensor = True
-        self.liralabSocket = LiralabSocket(5007)
-        self.cap = cv2.VideoCapture(0)
+        self.liralabSocket = LiralabSocket(5028)
+        self.cap = cv2.VideoCapture("VideoAorta.mp4")
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         ret, frame = self.cap.read()
@@ -70,11 +74,12 @@ class liralabLeRobotControl:
             time.sleep(0.5)
         frame = cv2.resize(frame, (640, 360))
         print(frame.shape)
+        plt.figure(figsize=(12, 7))
         plt.imshow(frame)
         plt.show()
 
         plt.ion()
-        self.fig, self.ax = plt.subplots()
+        self.fig, self.ax = plt.subplots(figsize=(16, 16))
         self.im = self.ax.imshow(np.zeros((256,256,3)))
 
 
@@ -176,7 +181,7 @@ class liralabLeRobotControl:
         # ============================================================
 
         self.im.set_data(vis_frame / 255.0)
-        plt.pause(0.05)
+        plt.pause(0.01)
         return frame.astype(np.float32) / 255.0, mask.astype(np.float32) / 255.0, diameter
 
     def preprocess_frame(self,frame_rgb):
@@ -205,6 +210,9 @@ class liralabLeRobotControl:
         self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
         ee_new_belly_old = None
         diameters = deque(maxlen=self.params['AORTA']['BUFFER_FRAMES'])
+        for i in range(10):
+            ret, frame = self.cap.read()                                                            # frame [w, h, 3]
+
         while(True):
             #------------------------#
             # Read state from socket #
@@ -220,11 +228,30 @@ class liralabLeRobotControl:
             #--------------------------------#
             frame, mask, diameter = self.get_segmented_frame(self.params['AORTA']['PIXEL_TO_MM'])
             if frame is None: break
+
+            #-------------------#
+            # Success Condition #
+            #-------------------#
+            #diameters.append(diameter)
+            #above_threshold = 0
+            #mean_diameter = 0
+            #for i in range(len(diameters)):
+            #    if diameters[i] > self.params['AORTA']['MIN_DIAMETER']:
+            #        above_threshold += 1
+            #        mean_diameter += diameters[i]
+            #    if above_threshold > self.params['AORTA']['FRAME_TO_SUCCESS']:
+            #        print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+            #        elapsed = time.perf_counter() - start - 3.2
+            #        print(f"Tempo: {elapsed:.2f} s")
+            #        return
+            #if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
+
             frame = self.preprocess_frame(frame) # [3,256,256] float32
 
             observation = {
                 "observation.images.top": frame,  # (1, 3, H, W) - batch di 1
                 "observation.state": torch.from_numpy(ee_curr_belly).unsqueeze(0).to(self.device),             # (1, 9)
+                "task": "Guide the ultrasound on the abdomen to find and center the aorta."
             }
 
             # ----------------------------------------------------------------------
@@ -249,8 +276,8 @@ class liralabLeRobotControl:
                     print("Z: " + str((ee_new_belly[5] - ee_new_belly_old[5]) * 180.0 / np.pi) + ""
                     f" with old {ee_new_belly_old[5] * 180.0 / np.pi} and new {ee_new_belly[5] * 180.0 / np.pi}")
             ee_new_belly_old = ee_new_belly
-            ee_new_belly[3] = np.clip(ee_new_belly[3], -limit, limit)
-            ee_new_belly[4] = np.clip(ee_new_belly[4], -limit, limit)
+            ee_new_belly[3] = 0.0 # np.clip(ee_new_belly[3], -limit, limit)
+            ee_new_belly[4] = 0.0 # np.clip(ee_new_belly[4], -limit, limit)
 
             eeR = R.from_euler('xyz', ee_new_belly[3:]).as_matrix()
             eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])
