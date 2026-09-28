@@ -77,8 +77,8 @@ class liralabILControl:
         self.T_0_initial = None
 
         # ---------- INIT
-        self.liralabSocket = LiralabSocket(5020)
-        self.cap = cv2.VideoCapture(4)
+        self.liralabSocket = LiralabSocket(5022)
+        self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         ret, frame = self.cap.read()

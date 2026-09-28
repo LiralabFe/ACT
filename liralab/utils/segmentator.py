@@ -7,6 +7,7 @@ import cv2
 import segmentation_models_pytorch as smp
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import torchvision.transforms as T
 import matplotlib.pyplot as plt
 from segmentation_models.hardsmeg.HarDNet_MSEG.lib.HarDMSEG import HarDMSEG
 import logging
@@ -22,7 +23,7 @@ class Segmentator:
 
         self.model = None
         self.transform = None        
-        
+
         if model_type == "UnetPP": 
             self._Segmentator__get_model_unetplusplus(weights, self.device)
             self._Segmentator__get_transform_unetplusplus()
@@ -50,7 +51,8 @@ class Segmentator:
                     output = output[0]
                 prob = torch.sigmoid(output)
                 mask = (prob > 0.5).float().squeeze().cpu().numpy()
-                output = self.model(input_tensor)
+                mask = np.resize(mask, (256,256))
+                #output = self.model(input_tensor)
             # Prendi la classe con la probabilità più alta (0 o 1)
             elif isinstance(self.model, smp.UnetPlusPlus):
                 mask = torch.argmax(output, dim=1).squeeze().cpu().numpy()

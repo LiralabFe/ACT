@@ -1,17 +1,68 @@
-
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.signal import butter, filtfilt
 
-# Leggi il CSV
-df = pd.read_csv("/home/legion/ROS/kinova_ws/TEST/TEST.csv")
+# =========================
+# Primo CSV
+# =========================
+df = pd.read_csv("./output.csv")
 
-# Converti il tempo da nanosecondi a secondi
-t = (df["timestamp"] - df["timestamp"].iloc[0]) * 1e-9
+t1 = df["timestamp"].to_numpy()
+fz = df["z"].to_numpy()
 
+dt1 = t1[1:] - t1[:-1]
+fs1 = 1 / dt1.mean()
+
+# =========================
+# Secondo CSV
+# =========================
+df2 = pd.read_csv(
+    "/home/legion/ROS/kinova_ws/AORTE/random_position/AAA_CONA_LCE_7/AAA_CONA_LCE_7.csv"
+)
+
+t2 = df2["timestamp"].to_numpy()
+zforce = df2["z"].to_numpy()
+
+dt2 = t2[1:] - t2[:-1]
+fs2 = 1 / dt2.mean()
+
+# Differenza rispetto al valore iniziale
+print(zforce[0])
+print(zforce[1])
+zforce_delta = zforce - zforce[0]
+
+print(f"Fs primo CSV  = {fs1:.2f} Hz")
+print(f"Fs secondo CSV = {fs2:.2f} Hz")
+
+# =========================
+# Filtro passa basso
+# =========================
+cutoff = 0.1
+ordine = 2
+
+# Fz
+b1, a1 = butter(ordine, cutoff / (fs1 / 2), btype="low")
+fz_filtered = filtfilt(b1, a1, fz)
+
+# zForce - zForce[0]
+b2, a2 = butter(ordine, cutoff / (fs2 / 2), btype="low")
+zforce_filtered = filtfilt(b2, a2, zforce_delta)
+
+# =========================
 # Plot
-plt.figure(figsize=(10, 6))
-print(df["zForce"][0])
-plt.plot(df["zForce"], label="Fz")
+# =========================
+plt.figure(figsize=(12, 6))
+
+plt.plot(t1,fz_filtered,label="Robot",linewidth=2)
+
+plt.plot(t2,zforce_filtered,label="Umano",linewidth=2)
+
+plt.xlabel("Tempo [s]")
+plt.ylabel("Force")
+plt.title("Confronto Fz e ΔzForce - Low-pass 0.1 Hz")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
 plt.show()
 
 """
@@ -69,7 +120,7 @@ from scipy.spatial.transform import Rotation as R
 # ======================
 # Configurazione
 # ======================
-H5_PATH = "/home/legion/ROS/kinova_ws/AORTE/episode_1.hdf5"
+H5_PATH = "/home/legion/PycharmProjects/lerobot/AAA_force_sensor/episode_1.hdf5"
 AXIS_LENGTH = 0.03
 
 # ======================
@@ -79,7 +130,7 @@ with h5py.File(H5_PATH, "r") as f:
     qpos = f["observations/qpos"][:]
 
 positions = qpos[:, :3]
-rpy = qpos[:, 3:]   # roll, pitch, yaw
+rpy = qpos[:, 3:6]   # roll, pitch, yaw
 
 # Rotazioni (XYZ = roll, pitch, yaw)
 rotations = R.from_euler("xyz", rpy).as_matrix()

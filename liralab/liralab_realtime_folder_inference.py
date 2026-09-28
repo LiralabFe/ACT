@@ -6,7 +6,7 @@ import torch
 import cv2
 from liralab.utils.segmentator import Segmentator
 
-EPISODE = "AAA_CONA_FLT_4"
+EPISODE = "AAA_CONA_LAB_2"
 cartella = f"/home/legion/ROS/kinova_ws/{EPISODE}/image/"
 cartella_mask = f"/home/legion/ROS/kinova_ws/{EPISODE}/mask/"
 ultimo_file_mostrato = None
@@ -17,7 +17,7 @@ color = np.array([0, 0, 255], dtype='uint8')  # Rosso
 if not os.path.isdir(cartella_mask):
         os.mkdir(cartella_mask)
 
-seg = Segmentator("./segmentation_models/hardsmeg/hardnet68.pth", "HarDMSEG")
+seg = Segmentator("./segmentation_models/hardsmeg/HarD-MSEG-best_v2.pth", "HarDMSEG")
 
 while True:
     # trova tutti i jpg/jpeg

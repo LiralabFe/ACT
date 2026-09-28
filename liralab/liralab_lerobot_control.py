@@ -19,6 +19,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 from collections import deque
+import csv
 
 class liralabLeRobotControl:
     def __init__(self):
@@ -26,14 +27,18 @@ class liralabLeRobotControl:
         self.params ={
             'AORTA' : 
             {
-                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_8/checkpoints/020000/pretrained_model",
-                'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/hardnet68.pth",
+                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_10/checkpoints/025000/pretrained_model",
+                'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/HarD-MSEG-best_v2.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'MIN_SUCCESS_FRAMES' : 15,
                 'BUFFER_FRAMES' : 100,
                 'FRAME_TO_SUCCESS' : 15,
                 'MIN_DIAMETER' : 9,
                 'PIXEL_TO_MM' : 1.0/1.8, # 1.8 pixels = 1mm nella ROI attuale ( Zoom: 27 Hz)
+            },
+            'OUTPUT':
+            {
+                'OUTPUT_FILE': "./output.csv"
             }
         }
 
@@ -64,8 +69,8 @@ class liralabLeRobotControl:
         self.T_0_initial = None
 
         self.use_force_sensor = True
-        self.liralabSocket = LiralabSocket(5028)
-        self.cap = cv2.VideoCapture("VideoAorta.mp4")
+        self.liralabSocket = LiralabSocket(5023)
+        self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         ret, frame = self.cap.read()
@@ -81,6 +86,12 @@ class liralabLeRobotControl:
         plt.ion()
         self.fig, self.ax = plt.subplots(figsize=(16, 16))
         self.im = self.ax.imshow(np.zeros((256,256,3)))
+        self.output_file = self.params['OUTPUT']['OUTPUT_FILE']
+        with open(self.output_file, "w", newline="") as file:
+            writer = csv.writer(file)
+            if self.use_force_sensor:
+                writer.writerow(["timestamp", "x", "y","z", "r", "p", "y", "fx", "fy", "fz"] if self.use_force_sensor
+                                 else ["timestamp","x", "y","z", "r", "p", "y"])
 
 
     def run(self):
@@ -205,6 +216,16 @@ class liralabLeRobotControl:
 
         return ";".join(f"{v:.4f}" for v in values)
 
+    def log_output(self, state, deltaT):
+        with open(self.output_file, "a", newline="") as file:
+            writer = csv.writer(file)
+            if self.use_force_sensor:
+                writer.writerow([deltaT, state[0], state[1], state[2],
+                                 state[3], state[4], state[5],
+                                 state[6], state[7], state[8]])
+            else:
+                writer.writerow([deltaT, state[0], state[1], state[2], state[3], state[4], state[5]])
+
     def __run_aorta_app(self):
         first = True
         self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
@@ -213,15 +234,20 @@ class liralabLeRobotControl:
         for i in range(10):
             ret, frame = self.cap.read()                                                            # frame [w, h, 3]
 
+        above_threshold = 0
+        mean_diameter = 0
         while(True):
             #------------------------#
             # Read state from socket #
             #------------------------#
             ee_curr_belly = self.get_current_ee_from_initial()
+
             if first:
                 first = False
                 start = time.perf_counter()
                 print(">>> START TIMER <<<")
+
+            self.log_output(ee_curr_belly, time.perf_counter() - start)
 
             #--------------------------------#
             # Capture frame for segmentation #
@@ -232,9 +258,17 @@ class liralabLeRobotControl:
             #-------------------#
             # Success Condition #
             #-------------------#
-            #diameters.append(diameter)
-            #above_threshold = 0
-            #mean_diameter = 0
+            diameters.append(diameter)
+
+            if diameter > self.params['AORTA']['MIN_DIAMETER']:
+                above_threshold += 1
+                mean_diameter += diameter
+                if above_threshold >= self.params['AORTA']['FRAME_TO_SUCCESS']:
+                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+                    elapsed = time.perf_counter() - start - 3.2
+                    print(f"Tempo: {elapsed:.2f} s")
+                    #return
+                    
             #for i in range(len(diameters)):
             #    if diameters[i] > self.params['AORTA']['MIN_DIAMETER']:
             #        above_threshold += 1
@@ -244,7 +278,7 @@ class liralabLeRobotControl:
             #        elapsed = time.perf_counter() - start - 3.2
             #        print(f"Tempo: {elapsed:.2f} s")
             #        return
-            #if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
+            if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
 
             frame = self.preprocess_frame(frame) # [3,256,256] float32
 
@@ -278,6 +312,7 @@ class liralabLeRobotControl:
             ee_new_belly_old = ee_new_belly
             ee_new_belly[3] = 0.0 # np.clip(ee_new_belly[3], -limit, limit)
             ee_new_belly[4] = 0.0 # np.clip(ee_new_belly[4], -limit, limit)
+            ee_new_belly[5] = 0.0
 
             eeR = R.from_euler('xyz', ee_new_belly[3:]).as_matrix()
             eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])

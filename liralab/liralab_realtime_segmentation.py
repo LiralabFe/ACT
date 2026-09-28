@@ -7,14 +7,11 @@ from liralab.utils.segmentator import Segmentator
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Modello
-seg = Segmentator(
-    "./segmentation_models/hardsmeg/hardnet68.pth",
-    "HarDMSEG"
-)
+seg = Segmentator("./segmentation_models/hardsmeg/hardnet68_old.pth","HarDMSEG")
 
 color = np.array([0, 0, 255], dtype=np.uint8)
 
-cap = cv2.VideoCapture(1, cv2.CAP_V4L2)
+cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
 if not cap.isOpened():
     raise RuntimeError("Impossibile aprire il device 1")
