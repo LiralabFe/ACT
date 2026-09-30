@@ -10,6 +10,7 @@ from lerobot.policies.smolvla import SmolVLAPolicy
 from lerobot.policies import make_pre_post_processors
 from liralab.utils.segmentator import Segmentator
 from liralab.liralab_socket import LiralabSocket
+from liralab.lowpass_filter import LowPassFilter
 import torchvision.transforms as transforms
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -27,27 +28,28 @@ class liralabLeRobotControl:
         self.params ={
             'AORTA' : 
             {
-                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_10/checkpoints/025000/pretrained_model",
+                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_12/checkpoints/050000/pretrained_model",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/HarD-MSEG-best_v2.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'MIN_SUCCESS_FRAMES' : 15,
                 'BUFFER_FRAMES' : 100,
-                'FRAME_TO_SUCCESS' : 15,
+                'FRAME_TO_SUCCESS' : 10,
                 'MIN_DIAMETER' : 9,
                 'PIXEL_TO_MM' : 1.0/1.8, # 1.8 pixels = 1mm nella ROI attuale ( Zoom: 27 Hz)
             },
             'OUTPUT':
             {
-                'OUTPUT_FILE': "./output.csv"
-            }
+                'OUTPUT_FILE': "./MIR_1.csv"
+            },
+            'FORCE_CONTROL':True
         }
 
         # ---------- LEROBOT POLICY STUFF
         self.CHECKPOINT_DIR = self.params['AORTA']['MODEL']
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-        # self.policy = ACTPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
-        self.policy = DiffusionPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
+        self.policy = ACTPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
+        #self.policy = DiffusionPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
         #self.policy = SmolVLAPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
         self.policy.eval()
 
@@ -65,11 +67,11 @@ class liralabLeRobotControl:
         self.segmentator = None
 
         # ---------- INIT
+        self.lowpass = LowPassFilter(0.5)
         self.T_initial_0 = None
         self.T_0_initial = None
 
-        self.use_force_sensor = True
-        self.liralabSocket = LiralabSocket(5023)
+        self.liralabSocket = LiralabSocket(5024)
         self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -79,7 +81,7 @@ class liralabLeRobotControl:
             time.sleep(0.5)
         frame = cv2.resize(frame, (640, 360))
         print(frame.shape)
-        plt.figure(figsize=(12, 7))
+        plt.figure(figsize=(7, 5))
         plt.imshow(frame)
         plt.show()
 
@@ -89,9 +91,10 @@ class liralabLeRobotControl:
         self.output_file = self.params['OUTPUT']['OUTPUT_FILE']
         with open(self.output_file, "w", newline="") as file:
             writer = csv.writer(file)
-            if self.use_force_sensor:
-                writer.writerow(["timestamp", "x", "y","z", "r", "p", "y", "fx", "fy", "fz"] if self.use_force_sensor
-                                 else ["timestamp","x", "y","z", "r", "p", "y"])
+            if not self.params['FORCE_CONTROL']:
+                writer.writerow(["timestamp", "x", "y","z", "r", "p", "y", "fx", "fy", "fz"])
+            else:
+                writer.writerow(["timestamp", "x", "y","z", "fx", "fy","fz", "action_fz"])
 
 
     def run(self):
@@ -100,7 +103,10 @@ class liralabLeRobotControl:
         self.T_initial_0 = self.get_tran_from_state(state)
         self.T_0_initial = np.linalg.inv(self.T_initial_0)
         self.liralabSocket.write("RUN")
-        self.__run_aorta_app()
+        if self.params['FORCE_CONTROL']:
+            self.__run_aorta_force_control_app()
+        else:
+            self.__run_aorta_app()
 
     def get_tran_from_state(self,state):
         return np.array([
@@ -112,24 +118,23 @@ class liralabLeRobotControl:
 
     def get_current_ee_from_initial(self):
         state = self.liralabSocket.read().split(';')[:-1]
-        if self.use_force_sensor:
-            force = self.get_force_from_state(state)
+
+        force = self.get_force_from_state(state)
 
         T_curr_0 = self.get_tran_from_state(state)                                              # T from current position to origin
         T_curr_initial = np.dot(self.T_0_initial, T_curr_0)                                     # T from current position to belly
         rpy = R.from_matrix(T_curr_initial[:3,:3]).as_euler('xyz').astype(np.float32)           # roll pitch yaw
 
-        if self.use_force_sensor:
+        if not self.params['FORCE_CONTROL']:
             ee_curr_initial = np.concatenate([T_curr_initial[:3,3], rpy, force])
         else:
-            ee_curr_initial = np.concatenate([T_curr_initial[:3,3], rpy])
+            ee_curr_initial = np.concatenate([T_curr_initial[:3,3], force])
 
         return ee_curr_initial
 
     def get_force_from_state(self, state):
-        return np.array([
-            state[12], state[13], state[14]
-        ], dtype=np.float32)
+        return np.array([state[12], state[13], state[14]], dtype=np.float32)
+
     
     def append_frame_and_mask(self, frame, mask):
         # Converti in numpy array
@@ -216,15 +221,20 @@ class liralabLeRobotControl:
 
         return ";".join(f"{v:.4f}" for v in values)
 
-    def log_output(self, state, deltaT):
+    def force_control_to_string(self, T, zForce):
+        x, y, z = T[0:3, 3]
+        values = [x, y, z, zForce]
+        return ";".join(f"{v:.4f}" for v in values)
+
+    def log_output(self, deltaT, state, action_fz = None):
         with open(self.output_file, "a", newline="") as file:
             writer = csv.writer(file)
-            if self.use_force_sensor:
+            if not self.params['FORCE_CONTROL']:
                 writer.writerow([deltaT, state[0], state[1], state[2],
-                                 state[3], state[4], state[5],
-                                 state[6], state[7], state[8]])
+                                    state[3], state[4], state[5],
+                                    state[6], state[7], state[8]])
             else:
-                writer.writerow([deltaT, state[0], state[1], state[2], state[3], state[4], state[5]])
+                writer.writerow([deltaT, state[0], state[1], state[2], state[3],state[4],state[5], action_fz])
 
     def __run_aorta_app(self):
         first = True
@@ -247,8 +257,6 @@ class liralabLeRobotControl:
                 start = time.perf_counter()
                 print(">>> START TIMER <<<")
 
-            self.log_output(ee_curr_belly, time.perf_counter() - start)
-
             #--------------------------------#
             # Capture frame for segmentation #
             #--------------------------------#
@@ -269,15 +277,15 @@ class liralabLeRobotControl:
                     print(f"Tempo: {elapsed:.2f} s")
                     #return
                     
-            #for i in range(len(diameters)):
-            #    if diameters[i] > self.params['AORTA']['MIN_DIAMETER']:
-            #        above_threshold += 1
-            #        mean_diameter += diameters[i]
-            #    if above_threshold > self.params['AORTA']['FRAME_TO_SUCCESS']:
-            #        print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
-            #        elapsed = time.perf_counter() - start - 3.2
-            #        print(f"Tempo: {elapsed:.2f} s")
-            #        return
+            for i in range(len(diameters)):
+                if diameters[i] > self.params['AORTA']['MIN_DIAMETER']:
+                    above_threshold += 1
+                    mean_diameter += diameters[i]
+                if above_threshold > self.params['AORTA']['FRAME_TO_SUCCESS']:
+                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+                    elapsed = time.perf_counter() - start - 3.2
+                    print(f"Tempo: {elapsed:.2f} s")
+                    return
             if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
 
             frame = self.preprocess_frame(frame) # [3,256,256] float32
@@ -324,8 +332,94 @@ class liralabLeRobotControl:
             #-----------------#
             # Write new state #
             #-----------------#
+            self.log_output(time.perf_counter() - start, ee_curr_belly)
             self.liralabSocket.write(self.transform_to_string(ee_new_0))
-    
+
+    def __run_aorta_force_control_app(self):
+        first = True
+        self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
+        diameters = deque(maxlen=self.params['AORTA']['BUFFER_FRAMES'])
+        for i in range(10):
+            ret, frame = self.cap.read()                                                            # frame [w, h, 3]
+
+        above_threshold = 0
+        mean_diameter = 0
+        while(True):
+            #------------------------#
+            # Read state from socket #
+            #------------------------#
+            ee_curr_belly = self.get_current_ee_from_initial()
+
+            if first:
+                first = False
+                start = time.perf_counter()
+                print(">>> START TIMER <<<")
+
+            #--------------------------------#
+            # Capture frame for segmentation #
+            #--------------------------------#
+            frame, mask, diameter = self.get_segmented_frame(self.params['AORTA']['PIXEL_TO_MM'])
+            if frame is None: break
+
+            #-------------------#
+            # Success Condition #
+            #-------------------#
+            diameters.append(diameter)
+
+            if diameter > self.params['AORTA']['MIN_DIAMETER']:
+                above_threshold += 1
+                mean_diameter += diameter
+                if above_threshold >= self.params['AORTA']['FRAME_TO_SUCCESS']:
+                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+                    elapsed = time.perf_counter() - start - 3.2
+                    print(f"Tempo: {elapsed:.2f} s")
+                    return
+                    
+            #for i in range(len(diameters)):
+            #    if diameters[i] > self.params['AORTA']['MIN_DIAMETER']:
+            #        above_threshold += 1
+            #        mean_diameter += diameters[i]
+            #    if above_threshold > self.params['AORTA']['FRAME_TO_SUCCESS']:
+            #        print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+            #        elapsed = time.perf_counter() - start - 3.2
+            #        print(f"Tempo: {elapsed:.2f} s")
+            #        return
+            if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
+
+            frame = self.preprocess_frame(frame) # [3,256,256] float32
+
+            observation = {
+                "observation.images.top": frame,  # (1, 3, H, W) - batch di 1
+                "observation.state": torch.from_numpy(ee_curr_belly).unsqueeze(0).to(self.device),             # (1, 9)
+                "task": "Guide the ultrasound on the abdomen to find and center the aorta."
+            }
+
+            # ----------------------------------------------------------------------
+            # 5. Inferenza
+            # ----------------------------------------------------------------------
+            with torch.no_grad():
+                obs = self.preprocess(observation)          # normalizza e sposta su device
+                action = self.policy.select_action(obs)     # (1, 4) - una azione dal chunk predetto
+                action = self.postprocess(action)[0]           # denormalizza -> unità reali (metri, radianti)
+        
+
+            force_limit = 12 # N
+            action[3] = np.clip(action[3], -force_limit, force_limit)
+            action[3] = self.lowpass.update(action[3])
+            print(f"FORCE: {action[3]}")
+            eeR = np.eye(3)
+            eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])
+            eeP = action[0:3]
+            ee_new_belly = np.concatenate([eeP,eeR])
+            ee_new_belly = self.get_tran_from_state(ee_new_belly)
+            ee_new_0 = np.dot(self.T_initial_0 , ee_new_belly)
+
+            #-----------------#
+            # Write new state #
+            #-----------------#
+            self.log_output(time.perf_counter() - start, ee_curr_belly, action[3].item())
+            self.liralabSocket.write(self.force_control_to_string(ee_new_0,action[3]))
+
 if __name__ == "__main__":
     ilControl = liralabLeRobotControl()
     ilControl.run()

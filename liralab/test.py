@@ -1,69 +1,95 @@
+"""
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.signal import butter, filtfilt
+
+# Nome del file CSV
+df = pd.read_csv("/home/legion/ROS/kinova_ws/sensor_data.csv")
+
+# Grafico
+fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+# Posizione Z
+axes[0].plot(df["timestamp"], df["z_current"], label="z current")
+axes[0].plot(df["timestamp"], df["z_target"], label="z target", linestyle="--")
+
+axes[0].set_ylabel("Z")
+axes[0].set_title("Z: Current vs Target")
+axes[0].legend()
+axes[0].grid(True)
+
+# Forza Z
+axes[1].plot(df["timestamp"], df["fz_current"], label="fz current")
+axes[1].plot(df["timestamp"], df["fz_target"], label="fz target", linestyle="--")
+
+axes[1].set_xlabel("Timestamp")
+axes[1].set_ylabel("Fz")
+axes[1].set_title("Fz: Current vs Target")
+axes[1].legend()
+axes[1].grid(True)
+
+plt.tight_layout()
+plt.show()
+
+quit(0)
+"""
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # =========================
-# Primo CSV
+# CSV
 # =========================
-df = pd.read_csv("./output.csv")
+df = pd.read_csv("./LP_1.csv")
 
-t1 = df["timestamp"].to_numpy()
-fz = df["z"].to_numpy()
-
-dt1 = t1[1:] - t1[:-1]
-fs1 = 1 / dt1.mean()
+t = df["timestamp"].to_numpy()
+fz = df["fz"].to_numpy()
+action_fz = df["action_fz"].to_numpy()
 
 # =========================
-# Secondo CSV
+# Filtro: media mobile
 # =========================
-df2 = pd.read_csv(
-    "/home/legion/ROS/kinova_ws/AORTE/random_position/AAA_CONA_LCE_7/AAA_CONA_LCE_7.csv"
+window = 3
+
+fz_filtered = (
+    pd.Series(fz)
+    .rolling(window=window, center=True, min_periods=1)
+    .mean()
+    .to_numpy()
 )
 
-t2 = df2["timestamp"].to_numpy()
-zforce = df2["z"].to_numpy()
-
-dt2 = t2[1:] - t2[:-1]
-fs2 = 1 / dt2.mean()
-
-# Differenza rispetto al valore iniziale
-print(zforce[0])
-print(zforce[1])
-zforce_delta = zforce - zforce[0]
-
-print(f"Fs primo CSV  = {fs1:.2f} Hz")
-print(f"Fs secondo CSV = {fs2:.2f} Hz")
-
-# =========================
-# Filtro passa basso
-# =========================
-cutoff = 0.1
-ordine = 2
-
-# Fz
-b1, a1 = butter(ordine, cutoff / (fs1 / 2), btype="low")
-fz_filtered = filtfilt(b1, a1, fz)
-
-# zForce - zForce[0]
-b2, a2 = butter(ordine, cutoff / (fs2 / 2), btype="low")
-zforce_filtered = filtfilt(b2, a2, zforce_delta)
+action_fz_filtered = (
+    pd.Series(action_fz)
+    .rolling(window=window, center=True, min_periods=1)
+    .mean()
+    .to_numpy()
+)
 
 # =========================
 # Plot
 # =========================
-plt.figure(figsize=(12, 6))
+plt.figure(figsize=(14, 6))
 
-plt.plot(t1,fz_filtered,label="Robot",linewidth=2)
+plt.plot(
+    t,
+    fz_filtered,
+    label="Fz - Real Sensor",
+    linewidth=2
+)
 
-plt.plot(t2,zforce_filtered,label="Umano",linewidth=2)
+plt.plot(
+    t,
+    action_fz_filtered,
+    label="Action Fz - Robot",
+    linewidth=2
+)
 
-plt.xlabel("Tempo [s]")
-plt.ylabel("Force")
-plt.title("Confronto Fz e ΔzForce - Low-pass 0.1 Hz")
-plt.legend()
+plt.xlabel("Time [s]")
+plt.ylabel("Force Z")
+plt.title("Real Sensor vs Robot Action Fz")
 plt.grid(True)
+plt.legend()
 plt.tight_layout()
 plt.show()
+
 
 """
 import cv2
