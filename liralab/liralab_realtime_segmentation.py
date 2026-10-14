@@ -7,7 +7,7 @@ from liralab.utils.segmentator import Segmentator
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Modello
-seg = Segmentator("./segmentation_models/hardsmeg/hardnet68_old.pth","HarDMSEG")
+seg = Segmentator("./segmentation_models/hardsmeg/HarD-MSEG-best_PHANTOM.pth","HarDMSEG")
 
 color = np.array([0, 0, 255], dtype=np.uint8)
 

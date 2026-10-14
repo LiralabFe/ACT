@@ -28,7 +28,7 @@ class liralabLeRobotControl:
         self.params ={
             'AORTA' : 
             {
-                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_12/checkpoints/050000/pretrained_model",
+                'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_13/checkpoints/100000/pretrained_model",
                 'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/HarD-MSEG-best_v2.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'MIN_SUCCESS_FRAMES' : 15,
@@ -39,7 +39,7 @@ class liralabLeRobotControl:
             },
             'OUTPUT':
             {
-                'OUTPUT_FILE': "./MIR_1.csv"
+                'OUTPUT_FILE': "./TEST_0.csv"
             },
             'FORCE_CONTROL':True
         }

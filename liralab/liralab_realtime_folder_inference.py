@@ -6,7 +6,7 @@ import torch
 import cv2
 from liralab.utils.segmentator import Segmentator
 
-EPISODE = "AAA_GIA_3"
+EPISODE = "AAA_CONA_EDA_3"
 cartella = f"/home/legion/ROS/kinova_ws/{EPISODE}/image/"
 cartella_mask = f"/home/legion/ROS/kinova_ws/{EPISODE}/mask/"
 ultimo_file_mostrato = None

@@ -20,7 +20,7 @@ def sort_by_final_number(file_list):
 
 EPISODES_PATH = "/home/legion/ROS/kinova_ws/AORTE/random_position"
 episodes_list = [f for f in os.listdir(EPISODES_PATH) if os.path.isdir(os.path.join(EPISODES_PATH, f))]
-e = 151
+e = 0
 for EPISODE in sort_by_final_number(episodes_list):
     print("#"*50)
     print("#"*10 + f" PROCESSING EPISODE {EPISODE} " + "#"*10)

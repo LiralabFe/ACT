@@ -2,12 +2,28 @@
 
 ## Record new episodes
 In `liralab_kinova` ros package:
-- Uncomment ```REGISTER NEW EPISODES``` code.
+- Uncomment ```REGISTER NEW EPISODES``` code from ```main.cpp``` in ROS\kinova_ws\src\liralab_kinova.
 - Comment ```RUN ACT``` code.
-- ```colcon build```
+- ```colcon build``` in ROS\kinova_ws.
 - Run ```ros2 run liralab_kinova liralab_kinova EPISODE_NAME```.
 
 The new episode is saved in ```ROS/kinova_ws``` ros workspace.
+
+Wait for message
+
+    -----
+    DATASET READY
+    -----
+
+
+For showing realtime segmentation,activate environment:
+
+    source .venv/bin/activate
+
+in liralab_realtime_folder_inference.py change ```EPISODE``` with the name of the new episode. Then run:
+
+    python -m liralab.liralab_realtime_folder_inference
+
 
 ## Generate the Dataset and Train ACT 
 Follow the following steps in sequence.
@@ -102,3 +118,45 @@ Set camera ID and run:
 
 ### 3. Run
 Wait for US camera to pop-up. Close it, guide the end effector on the initial position and press ENTER. Everything will run smoothly and safely.
+
+--- 
+## Execute lerobot
+
+### 0. Connect US pc and check for device ID:
+You can run this handy script to get the camera ID:
+
+``` python -m liralab.liralab_camera_finder ```
+
+Then:
+
+- Comment ```REGISTER NEW EPISODES``` code.
+- Uncomment ```Z FORCE CONTROL``` code.
+- ```colcon build```
+
+### 1. Run Low Level Controller
+``` ros2 run liralab_kinova liralab_kinova ```
+### 2. Run Imitation Learning Controller
+Set camera ID and run:
+
+``` python -m liralab.liralab_lerobot_control ```
+
+Position the probe on the belly and ONLY AFTER close the image preview (the initial position is the one recorded after closing the image).
+
+### 3. Run
+Wait for US camera to pop-up. Close it, guide the end effector on the initial position and press ENTER. Everything will run smoothly and safely.
+
+
+## Troubleshooting
+
+Se il sensore di forza non va:
+
+    sudo rmmod pcan
+    sudo modprobe peak_usb
+    sudo ip link set can0 up type can bitrate 1000000
+Testare poi con:
+
+    candump can0
+
+Per riavviare tutti i processi, dare varie volte il comando:
+
+    killall -9 ros2 python liralab_kinova
