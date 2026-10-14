@@ -58,25 +58,26 @@ class LiralabGUIControl:
             },
             'JUGULAR':
             {
-                'MODEL' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/jugular/SeResNet50_Phantom(Neck)_v4.onnx",
+                'MODEL' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/jugular/SeResNet50_Phantom(Neck)_v4.pth",
                 'VIDEO' : "/home/legion/Downloads/jugular.mp4"
             },
             'FORCE_CONTROL':True
         }
-        self.liralabSocket = LiralabSocket(5025)
+        self.liralabSocket = LiralabSocket(5026)
         self.should_quit = False
-        # ---------- 
-        self.IMG_H = 256 # 480
-        self.IMG_W = 256 # 640
-
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # ---------- SEGMENTATOR
         self.segmentator = None
 
-        # ---------- INIT
-        self.lowpass = LowPassFilter(0.5)
-        self.T_initial_0 = None
-        self.T_0_initial = None
+        # ---------- NORMALIZATION
+        self.IMG_H = 256 # 480
+        self.IMG_W = 256 # 640
+        mean=[0.485, 0.456, 0.406]
+        std=[0.229, 0.224, 0.225]
+        self.normalize = transforms.Normalize(mean, std)
+        self.seg_normalization = A.Compose([A.Normalize(mean, std),A.ToFloat(max_value=255.0),ToTensorV2()])
 
+        # ---------- INIT
         self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -87,25 +88,13 @@ class LiralabGUIControl:
         frame = cv2.resize(frame, (640, 360))
 
         self.gui.update_image(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
-        
+
 
     def run_aorta(self):
         self.liralabSocket.write("AORTA")
-        # ---------- LEROBOT POLICY STUFF
-        self.CHECKPOINT_DIR = self.params['AORTA']['MODEL']
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-        self.policy = ACTPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
-        #self.policy = DiffusionPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
-        #self.policy = SmolVLAPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
-        self.policy.eval()
 
-        self.preprocess, self.postprocess = make_pre_post_processors(
-            self.policy.config,
-            self.CHECKPOINT_DIR,
-            preprocessor_overrides={"device_processor": {"device": str(self.device)}},
-        )
-
+    def run_jugular(self):
+        self.liralabSocket.write("JUGULAR")
 
     def get_tran_from_state(self,state):
         return np.array([
@@ -227,98 +216,37 @@ class LiralabGUIControl:
 
     def __run_aorta_force_control_app(self):
         self.liralabSocket.write("START")
-        # Register init pose
-        state = self.liralabSocket.read().split(';')[:-1]
-        self.T_initial_0 = self.get_tran_from_state(state)
-        self.T_0_initial = np.linalg.inv(self.T_initial_0)
-        self.liralabSocket.write("RUN")
 
-        first = True
         self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
         diameters = deque(maxlen=self.params['AORTA']['BUFFER_FRAMES'])
         for i in range(10):
-            ret, frame = self.cap.read()                                                            # frame [w, h, 3]
+            ret, frame = self.cap.read()                                                            # frame [w, h, 3]            
 
-        above_threshold = 0
-        mean_diameter = 0
+        initial_time = time.time()
         while(True):
-            if self.should_quit:
-                self.liralabSocket.write("QUIT")
-                return
-            #------------------------#
-            # Read state from socket #
-            #------------------------#
-            ee_curr_belly = self.get_current_ee_from_initial()
+            msg = self.liralabSocket.read()
+            if msg == "MEASURE":
+                diameters = []
+                start_time = time.time()
+                mean_diameter = -1
 
-            if first:
-                first = False
-                start = time.perf_counter()
-                print(">>> START TIMER <<<")
+                while time.time() - start_time < 3.0:
+                    frame, mask, diameter = self.get_segmented_frame(self.params['AORTA']['PIXEL_TO_MM'])
+                    if frame is None: break
+                    if diameter > self.params['AORTA']['MIN_DIAMETER']: diameters.append(diameter)
 
-            #--------------------------------#
-            # Capture frame for segmentation #
-            #--------------------------------#
-            frame, mask, diameter = self.get_segmented_frame(self.params['AORTA']['PIXEL_TO_MM'])
-            if frame is None: break
+                if len(diameters) > self.params['AORTA']['FRAME_TO_SUCCESS']:
+                    mean_diameter = float(np.mean(diameters))
 
-            #-------------------#
-            # Success Condition #
-            #-------------------#
-            #diameters.append(diameter)
-
-            if diameter > self.params['AORTA']['MIN_DIAMETER']:
-                above_threshold += 1
-                mean_diameter += diameter
-                if above_threshold >= self.params['AORTA']['FRAME_TO_SUCCESS']:
-                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
-                    elapsed = time.perf_counter() - start - 3.2
-                    print(f"Tempo: {elapsed:.2f} s")
+                if mean_diameter > 0:
+                    print(f"diametro medio: {mean_diameter:.2f} mm")
+                    print(f"tempo: {time.time() - initial_time:.2f} s")
+                print("Next point...")
+                
+                if self.should_quit:
                     self.liralabSocket.write("QUIT")
                     return
-                    
-            #for i in range(len(diameters)):
-            #    if diameters[i] > self.params['AORTA']['MIN_DIAMETER']:
-            #        above_threshold += 1
-            #        mean_diameter += diameters[i]
-            #    if above_threshold > self.params['AORTA']['FRAME_TO_SUCCESS']:
-            #        print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
-            #        elapsed = time.perf_counter() - start - 3.2
-            #        print(f"Tempo: {elapsed:.2f} s")
-            #        return
-            if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
-
-            frame = self.preprocess_frame(frame) # [3,256,256] float32
-
-            observation = {
-                "observation.images.top": frame,  # (1, 3, H, W) - batch di 1
-                "observation.state": torch.from_numpy(ee_curr_belly).unsqueeze(0).to(self.device),             # (1, 9)
-                "task": "Guide the ultrasound on the abdomen to find and center the aorta."
-            }
-
-            # ----------------------------------------------------------------------
-            # 5. Inferenza
-            # ----------------------------------------------------------------------
-            with torch.no_grad():
-                obs = self.preprocess(observation)          # normalizza e sposta su device
-                action = self.policy.select_action(obs)     # (1, 4) - una azione dal chunk predetto
-                action = self.postprocess(action)[0]           # denormalizza -> unità reali (metri, radianti)
-        
-
-            force_limit = 12 # N
-            action[3] = np.clip(action[3], -force_limit, force_limit)
-            action[3] = self.lowpass.update(action[3])
-            print(f"FORCE: {action[3]}")
-            eeR = np.eye(3)
-            eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])
-            eeP = action[0:3]
-            ee_new_belly = np.concatenate([eeP,eeR])
-            ee_new_belly = self.get_tran_from_state(ee_new_belly)
-            ee_new_0 = np.dot(self.T_initial_0 , ee_new_belly)
-
-            #-----------------#
-            # Write new state #
-            #-----------------#
-            self.liralabSocket.write(self.force_control_to_string(ee_new_0,action[3]))
+                self.liralabSocket.write(f"{mean_diameter};")
 
 
 class LiralabGUI(tk.Tk):

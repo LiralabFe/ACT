@@ -1,10 +1,12 @@
-"""import cv2
+import cv2
 import numpy as np
-import onnxruntime as ort
+import torch
+import torch.nn as nn
+from monai.networks.nets import FlexibleUNet
 import time
 
 # Configurazione
-MODEL_PATH = "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/jugular/SeResNet50_Phantom(Neck)_v4.onnx"
+MODEL_PATH = "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/jugular/SeResNet50_Phantom(Neck)_v4.pth"
 CAMERA_ID = "/home/legion/Downloads/jugular.mp4"
 IMG_SIZE = 256
 
@@ -12,21 +14,26 @@ IMG_SIZE = 256
 # None = utilizza l'intero frame
 ROI = (380,100,350,350)
 
-# Caricamento modello ONNX
-session = ort.InferenceSession(
-    MODEL_PATH,
-    providers=[
-        "CUDAExecutionProvider",
-        "CPUExecutionProvider"
-    ]
+# Architettura verificata sui pesi .pth e confrontata con il modello ONNX.
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = FlexibleUNet(in_channels=3,out_channels=2,
+    backbone="efficientnet-b2",
+    pretrained=False,
+    is_pad=False,
+    pre_conv=None,
 )
+model.segmentation_head = nn.Conv2d(16, 3, kernel_size=1)
+model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu", weights_only=True))
+model.to(device).eval()
 
-input_name = session.get_inputs()[0].name
+# Queste trasformazioni sono incorporate nell'ONNX, ma non nei pesi .pth.
+mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
+std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
 
 print("Modello caricato")
-print("Provider:", session.get_providers())
-print("Input:", session.get_inputs()[0].shape)
-print("Output:", session.get_outputs()[0].shape)
+print("Dispositivo:", device)
+print("Input:", [1, 3, IMG_SIZE, IMG_SIZE])
+print("Output:", [1, 3, IMG_SIZE, IMG_SIZE])
 
 # Apertura camera
 cap = cv2.VideoCapture(CAMERA_ID)
@@ -50,9 +57,7 @@ while True:
     # Resize a 256x256
     img = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
 
-    # Preprocessing IDENTICO al codice C#
-    # Nessuna normalizzazione
-    # Nessuna conversione BGR -> RGB
+    # Stesso input esterno dell'ONNX: BGR float32, senza conversione RGB.
     input_tensor = img.astype(np.float32)
 
     # HWC -> CHW
@@ -62,11 +67,18 @@ while True:
     input_tensor = np.expand_dims(input_tensor, axis=0)
 
     input_tensor = np.ascontiguousarray(input_tensor)
+    input_tensor = torch.from_numpy(input_tensor).to(device)
+
+    # Riproduci la normalizzazione interna del modello ONNX.
+    input_tensor = (input_tensor / 255.0 - mean) / std
 
     # Inferenza
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
     start = time.perf_counter()
 
-    output = session.run(None, {input_name: input_tensor})[0]
+    with torch.inference_mode():
+        output = torch.softmax(model(input_tensor), dim=1).cpu().numpy()
 
     inference_ms = (time.perf_counter() - start) * 1000
 
@@ -104,61 +116,3 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
-"""
-import cv2
-
-# Apri la webcam
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-
-# Dimensioni frame originale
-width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-# ROI: (x, y, larghezza, altezza)
-ROI = (335, 125, 1100 - 335, 600 - 125)
-
-roi_width = ROI[2]
-roi_height = ROI[3]
-
-# Codec e file di output
-fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-out = cv2.VideoWriter(
-    "aorta_phantom_3.mp4",
-    fourcc,
-    30,
-    (roi_width, roi_height)
-)
-
-if not out.isOpened():
-    raise RuntimeError("Impossibile creare il file video.")
-
-print("Registrazione avviata. Premi Q per terminare.")
-
-try:
-    while cap.isOpened():
-        ret, frame = cap.read()
-
-        if not ret:
-            break
-
-        # Estrai la ROI
-        x, y, w, h = ROI
-        frame = frame[y:y+h, x:x+w]
-
-        # Registra il frame ritagliato
-        out.write(frame)
-
-        # Visualizza il frame
-        cv2.imshow("Registrazione ROI", frame)
-
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-finally:
-    cap.release()
-    out.release()
-    cv2.destroyAllWindows()
-
-print("Video salvato in aorta_phantom_1.mp4")
