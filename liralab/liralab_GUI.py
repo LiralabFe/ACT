@@ -34,12 +34,27 @@ from collections import deque
 import onnxruntime as ort
 import csv
 
+# Colori personalizzabili (nomi Tk oppure valori esadecimali #RRGGBB).
+GUI_COLORS = {
+    "background": "#22141D",
+    "text": "#e7bae3",
+    "button": "#0B2336",
+    "button_hover": "#123958",
+    "button_pressed": "#4677AF",
+    "button_disabled": "#141414",
+    "text_disabled": "#35272f",
+    "canvas": "#0F0B0E",
+    "placeholder": "#22141D",
+    "log_background": "#110C0F",
+    "log_text": "#ade9d0",
+    "selection": "#000000",
+    "border": "#1B0A11"
+}
+
 class LiralabGUIControl:
     def __init__(self, gui):
         self.gui = gui
 
-        example_image = Image.open("/home/legion/PycharmProjects/ACT/ACT_refactor/DETR.png")
-        self.gui.update_image(example_image)
         # Per un frame OpenCV (BGR):
         # self.gui.update_image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
@@ -58,12 +73,13 @@ class LiralabGUIControl:
             },
             'JUGULAR':
             {
-                'MODEL' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/jugular/SeResNet50_Phantom(Neck)_v4.pth",
-                'VIDEO' : "/home/legion/Downloads/jugular.mp4"
+                'VIDEO' : "/home/legion/Downloads/jugular.mp4",
+                'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/jugular/SeResNet50_Phantom(Neck)_v4.pth",
+                'SEG_MODEL' : "SeResNet50",
             },
             'FORCE_CONTROL':True
         }
-        self.liralabSocket = LiralabSocket(5026)
+        self.liralabSocket = LiralabSocket(5024)
         self.should_quit = False
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # ---------- SEGMENTATOR
@@ -78,9 +94,18 @@ class LiralabGUIControl:
         self.seg_normalization = A.Compose([A.Normalize(mean, std),A.ToFloat(max_value=255.0),ToTensorV2()])
 
         # ---------- INIT
+        self.cap = None
+        self.jugular_datas = []
+
+    def run_aorta(self):
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
+
         self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
         ret, frame = self.cap.read()
         while frame is None or frame.max() == 0:
             ret, frame = self.cap.read()
@@ -88,12 +113,26 @@ class LiralabGUIControl:
         frame = cv2.resize(frame, (640, 360))
 
         self.gui.update_image(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
-
-
-    def run_aorta(self):
         self.liralabSocket.write("AORTA")
 
     def run_jugular(self):
+        self.jugular_datas = []
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
+
+        self.cap = cv2.VideoCapture(self.params['JUGULAR']['VIDEO'])
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self.cap.set(cv2.CAP_PROP_FPS, 10)
+
+        ret, frame = self.cap.read()
+        while frame is None or frame.max() == 0:
+            ret, frame = self.cap.read()
+            time.sleep(0.5)
+        frame = cv2.resize(frame, (640, 360))
+
+        self.gui.update_image(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
         self.liralabSocket.write("JUGULAR")
 
     def get_tran_from_state(self,state):
@@ -214,7 +253,7 @@ class LiralabGUIControl:
         values = [x, y, z, zForce]
         return ";".join(f"{v:.4f}" for v in values)
 
-    def __run_aorta_force_control_app(self):
+    def __run_aorta_grid_control_app(self):
         self.liralabSocket.write("START")
 
         self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
@@ -241,18 +280,59 @@ class LiralabGUIControl:
                 if mean_diameter > 0:
                     print(f"diametro medio: {mean_diameter:.2f} mm")
                     print(f"tempo: {time.time() - initial_time:.2f} s")
+                    self.liralabSocket.write(f"{mean_diameter};")
+                    self.gui.popup(f"Diameter: {mean_diameter}\nTime: {time.time() - initial_time}.")
+                    return
                 print("Next point...")
                 
                 if self.should_quit:
                     self.liralabSocket.write("QUIT")
                     return
                 self.liralabSocket.write(f"{mean_diameter};")
+    
+    def __run_jugular_grid_control_app(self):
+        self.liralabSocket.write("START")
 
+        self.segmentator = Segmentator(self.params['JUGULAR']['SEG'], self.params['JUGULAR']['SEG_MODEL'])
+        for i in range(10):
+            ret, frame = self.cap.read()                                                            # frame [w, h, 3]            
+
+        initial_time = time.time()
+        while(True):
+            msg = self.liralabSocket.read()
+            if msg == "MEASURE":
+                start_time = time.time()
+                mean_diameter = -1
+
+                for i in range(10): # 10 seconds
+                    data = []
+                    for n in range (10): # 10 samples per second
+                        if self.should_quit:
+                            self.liralabSocket.write("QUIT")
+                            return
+                        time.sleep(0.1)
+                        frame, mask, diameter = self.get_segmented_frame(self.params['AORTA']['PIXEL_TO_MM'])
+                        if frame is None or diameter is None:
+                            data.append(data[-1] if len(data) > 0 else 0)
+                            continue
+                        data.append(diameter)
+
+                    self.jugular_datas.append(data)
+                    self.gui.updateRealtimeGraph(np.mean(self.jugular_datas, axis=0))
+
+                self.liralabSocket.write(f"{1.0};")
 
 class LiralabGUI(tk.Tk):
-    def __init__(self, on_start=None):
-        """on_start, se fornito, riceve la modalità scelta come stringa."""
+    def __init__(self, on_start=None, colors=None):
+        """colors può sovrascrivere le voci di GUI_COLORS.
+
+        on_start, se fornito, riceve la modalità scelta come stringa.
+        """
         super().__init__()
+        self.colors = {**GUI_COLORS, **(colors or {})}
+        self._style = ttk.Style(self)
+        # Il tema clam permette di impostare i colori anche sui pulsanti ttk.
+        self._style.theme_use("clam")
         self.title("Liralab")
         self.geometry("900x700")
         self.minsize(500, 400)
@@ -261,6 +341,12 @@ class LiralabGUI(tk.Tk):
         self._events = Queue()
         self._image_lock = Lock()
         self._pending_image = None
+        self._graph_lock = Lock()
+        self._pending_graph = None
+        self._graph_window = None
+        self._graph_canvas = None
+        self._graph_axes = None
+        self._graph_line = None
         self._busy = False
         self._ready = False
         self._mode_selected = False
@@ -300,12 +386,86 @@ class LiralabGUI(tk.Tk):
         log_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
         self.log_text = scrolledtext.ScrolledText(log_frame, height=7, state="disabled", wrap="word")
         self.log_text.pack(fill="both", expand=True)
+        # La scrollbar Tk nativa può mantenere bordi di sistema chiari.
+        self.log_text.vbar.destroy()
+        self.log_text.vbar = ttk.Scrollbar(
+            self.log_text.frame, orient="vertical", command=self.log_text.yview
+        )
+        self.log_text.vbar.pack(side="right", fill="y", before=self.log_text._w)
+        self.log_text.configure(yscrollcommand=self.log_text.vbar.set)
+        self.set_colors()
         self.log("Interfaccia pronta. Modalità: AORTA.")
         self.after(40, self._process_events)
         self._run_background("init", self._initialize_controller)
 
     def _initialize_controller(self):
         self.liralab_GUI_control = LiralabGUIControl(self)
+
+    def set_colors(self, colors=None):
+        """Applica i colori; chiamare dal thread GUI per cambiarli a runtime."""
+        self.colors.update(colors or {})
+        c = self.colors
+        self.configure(background=c["background"])
+        self._style.configure(
+            ".", background=c["background"], foreground=c["text"],
+            bordercolor=c["border"], lightcolor=c["border"], darkcolor=c["border"],
+            focuscolor=c["border"], troughcolor=c["background"],
+        )
+        for name in ("TFrame", "TLabel", "TLabelframe", "TLabelframe.Label"):
+            self._style.configure(
+                name, background=c["background"], foreground=c["text"],
+                bordercolor=c["border"], lightcolor=c["border"], darkcolor=c["border"],
+                relief="flat",
+            )
+        self._style.configure(
+            "TButton", background=c["button"], foreground=c["text"], relief="flat",
+            bordercolor=c["border"], lightcolor=c["border"], darkcolor=c["border"],
+            focuscolor=c["border"],
+        )
+        self._style.map(
+            "TButton",
+            background=[("disabled", c["button_disabled"]),
+                        ("pressed", c["button_pressed"]), ("active", c["button_hover"])],
+            foreground=[("disabled", c["text_disabled"])],
+            bordercolor=[("!disabled", c["border"]), ("disabled", c["border"])],
+            lightcolor=[("!disabled", c["border"]), ("disabled", c["border"])],
+            darkcolor=[("!disabled", c["border"]), ("disabled", c["border"])],
+        )
+        self.canvas.configure(
+            background=c["canvas"],
+            borderwidth=0,
+            highlightthickness=0,
+            relief="flat"
+        )
+
+        self.log_text.configure(
+            background=c["log_background"],
+            foreground=c["log_text"],
+            insertbackground=c["log_text"],
+            selectbackground=c["selection"],
+            selectforeground=c["text"],
+            borderwidth=0,
+            highlightthickness=0,
+            relief="flat"
+        )
+        self.log_text.frame.configure(
+            background=c["log_background"], borderwidth=0, highlightthickness=0,
+        )
+        self._style.configure(
+            "Vertical.TScrollbar", background=c["button"],
+            troughcolor=c["log_background"], arrowcolor=c["text"],
+            bordercolor=c["border"], lightcolor=c["border"], darkcolor=c["border"],
+            relief="flat",
+        )
+        self._style.map(
+            "Vertical.TScrollbar",
+            background=[("pressed", c["button_pressed"]), ("active", c["button_hover"])],
+            bordercolor=[("!disabled", c["border"]), ("disabled", c["border"])],
+            lightcolor=[("!disabled", c["border"]), ("disabled", c["border"])],
+            darkcolor=[("!disabled", c["border"]), ("disabled", c["border"])],
+        )
+        
+        self._render_image()
 
     def _run_background(self, operation, task):
         if self._busy:
@@ -355,7 +515,11 @@ class LiralabGUI(tk.Tk):
             self._run_background("run", lambda: self.on_start(mode))
         elif mode == "AORTA":
             self._run_background(
-                "run", self.liralab_GUI_control._LiralabGUIControl__run_aorta_force_control_app
+                "run", self.liralab_GUI_control._LiralabGUIControl__run_aorta_grid_control_app
+            )
+        elif mode == "JUGULAR":
+            self._run_background(
+                "run", self.liralab_GUI_control._LiralabGUIControl__run_jugular_grid_control_app
             )
         else:
             self.log("Collegare on_start per avviare l'elaborazione.")
@@ -383,13 +547,100 @@ class LiralabGUI(tk.Tk):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self._events.put(("log", f"[{timestamp}] {message}\n"))
 
+    def popup(self, message, title="Liralab"):
+        """Mostra un messaggio non modale, anche da un thread di elaborazione."""
+        self._events.put(("popup", (str(message), str(title))))
+
+    def updateRealtimeGraph(self, newValues):
+        """Aggiorna la curva Y rispetto agli indici, anche da thread del controller.
+
+        Ogni vettore sostituisce il precedente. Un vettore vuoto cancella la curva.
+        """
+        values = np.array(newValues, dtype=np.float64, copy=True)
+        if values.ndim != 1:
+            raise ValueError("newValues deve essere un vettore monodimensionale")
+        values[~np.isfinite(values)] = np.nan
+        with self._graph_lock:
+            self._pending_graph = values
+
+    def _update_realtime_graph(self, values):
+        if self._graph_window is None:
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+            window = tk.Toplevel(self)
+            self._graph_window = window
+            window.title("Liralab — Grafico realtime")
+            window.geometry("800x450")
+            window.minsize(400, 250)
+            window.configure(background=self.colors["background"])
+            window.transient(self)
+            window.protocol("WM_DELETE_WINDOW", self._close_realtime_graph)
+            window.bind("<Escape>", lambda event: self._close_realtime_graph())
+            figure = Figure(figsize=(8, 4), dpi=100, layout="constrained")
+            self._graph_axes = figure.add_subplot(111)
+            self._graph_line, = self._graph_axes.plot([], [], linewidth=2)
+            self._graph_axes.set_xlabel("Indice")
+            self._graph_axes.set_ylabel("Valore")
+            self._graph_axes.grid(True, alpha=0.25)
+            self._graph_canvas = FigureCanvasTkAgg(figure, master=window)
+            widget = self._graph_canvas.get_tk_widget()
+            widget.configure(borderwidth=0, highlightthickness=0)
+            widget.pack(fill="both", expand=True)
+
+        axes = self._graph_axes
+        axes.figure.set_facecolor(self.colors["background"])
+        axes.set_facecolor(self.colors["canvas"])
+        axes.tick_params(colors=self.colors["text"])
+        axes.xaxis.label.set_color(self.colors["text"])
+        axes.yaxis.label.set_color(self.colors["text"])
+        for spine in axes.spines.values():
+            spine.set_color(self.colors["border"])
+        self._graph_line.set_color(self.colors["log_text"])
+        self._graph_line.set_data(np.arange(values.size), values)
+        axes.relim()
+        axes.autoscale_view()
+        self._graph_canvas.draw_idle()
+
+    def _close_realtime_graph(self):
+        if self._graph_window is not None:
+            self._graph_window.destroy()
+        self._graph_window = None
+        self._graph_canvas = None
+        self._graph_axes = None
+        self._graph_line = None
+
+    def _show_popup(self, message, title):
+        window = tk.Toplevel(self)
+        window.title(title)
+        window.configure(background=self.colors["background"])
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+        label = ttk.Label(
+            window, text=message, font=("TkDefaultFont", 22, "bold"),
+            anchor="center", justify="center", wraplength=560, padding=24,
+        )
+        label.grid(row=0, column=0, sticky="nsew")
+        ttk.Button(window, text="OK", command=window.destroy).grid(row=1, column=0, pady=(0, 20))
+        window.bind("<Escape>", lambda event: window.destroy())
+        window.update_idletasks()
+        width = max(420, window.winfo_reqwidth())
+        height = max(200, window.winfo_reqheight())
+        x = max(0, self.winfo_rootx() + (self.winfo_width() - width) // 2)
+        y = max(0, self.winfo_rooty() + (self.winfo_height() - height) // 2)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        window.lift()
+
     def _process_events(self):
         for _ in range(100):
             try:
                 kind, value = self._events.get_nowait()
             except Empty:
                 break
-            if kind == "done":
+            if kind == "popup":
+                self._show_popup(*value)
+            elif kind == "done":
                 operation, success = value
                 self._busy = False
                 self.quit_button.state(["disabled"])
@@ -419,6 +670,11 @@ class LiralabGUI(tk.Tk):
         if image is not None:
             self._image = image
             self._render_image()
+        with self._graph_lock:
+            values = self._pending_graph
+            self._pending_graph = None
+        if values is not None:
+            self._update_realtime_graph(values)
         self.after(40, self._process_events)
 
     def _render_image(self, event=None):
@@ -427,11 +683,13 @@ class LiralabGUI(tk.Tk):
         self.canvas.delete("all")
         if self._image is None:
             self.canvas.create_text(
-                width / 2, height / 2, text="In attesa di un'immagine", fill="white"
+                width / 2, height / 2, text="In attesa di un'immagine", fill=self.colors["placeholder"]
             )
             return
-        preview = self._image.copy()
-        preview.thumbnail((width, height), Image.Resampling.LANCZOS)
+        scale = min(width / self._image.width, height / self._image.height)
+        size = (max(1, min(width, round(self._image.width * scale))),
+                max(1, min(height, round(self._image.height * scale))))
+        preview = self._image.resize(size, Image.Resampling.LANCZOS)
         self._photo = ImageTk.PhotoImage(preview)
         self.canvas.create_image(width / 2, height / 2, image=self._photo)
 
