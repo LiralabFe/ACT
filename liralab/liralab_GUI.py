@@ -79,7 +79,7 @@ class LiralabGUIControl:
             },
             'FORCE_CONTROL':True
         }
-        self.liralabSocket = LiralabSocket(5024)
+        self.liralabSocket = LiralabSocket(5026)
         self.should_quit = False
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # ---------- SEGMENTATOR
@@ -221,6 +221,8 @@ class LiralabGUIControl:
             # Rimetto il canale modificato nel frame
             vis_frame[:, :, 0] = blue
             diameter = 2.0 * radius * pixel_to_mm
+            mask_3ch = cv2.cvtColor(mask.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+            vis_frame = cv2.addWeighted(vis_frame, 0.7, mask_3ch, 0.3, 0)
         # ============================================================
 
         vis_frame = np.clip(vis_frame, 0, 255).astype(np.uint8)
@@ -321,6 +323,7 @@ class LiralabGUIControl:
                     self.gui.updateRealtimeGraph(np.mean(self.jugular_datas, axis=0))
 
                 self.liralabSocket.write(f"{1.0};")
+                return
 
 class LiralabGUI(tk.Tk):
     def __init__(self, on_start=None, colors=None):
@@ -526,13 +529,14 @@ class LiralabGUI(tk.Tk):
 
     def request_quit(self):
         self._quit_requested = True
+        self._ready = False
         self._mode_selected = False
         if self.liralab_GUI_control is not None:
             self.liralab_GUI_control.should_quit = True
             self.log("QUIT richiesto.")
         for button in self._mode_buttons.values():
             button.state(["!disabled", "!pressed"])
-        self.start_button.state(["!disabled"])
+        self.start_button.state(["disabled"])
         self.quit_button.state(["disabled"])
 
     def update_image(self, image):
@@ -648,13 +652,14 @@ class LiralabGUI(tk.Tk):
                     self._ready = success
                 elif operation == "run":
                     self._ready = False
-                    if success:
-                        self._mode_selected = False
+                    self._mode_selected = False
                 for button in self._mode_buttons.values():
                     button.state(["disabled"] if self._mode_selected else ["!disabled"])
+                    if not self._mode_selected:
+                        button.state(["!pressed"])
                 self.start_button.state(
                     ["!disabled"]
-                    if self._ready or self._quit_requested or (operation == "run" and success)
+                    if self._ready
                     else ["disabled"]
                 )
                 if success:
