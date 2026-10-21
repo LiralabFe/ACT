@@ -63,7 +63,8 @@ class LiralabGUIControl:
             'AORTA' : 
             {
                 'MODEL':"/home/legion/PycharmProjects/lerobot/outputs/train/AAA_13/checkpoints/100000/pretrained_model",
-                'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/HarD-MSEG-best_PHANTOM_v2.pth",
+                'SEG' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/HarD-MSEG-best_v3.pth",
+                'SEG_PHANTOM' : "/home/legion/PycharmProjects/ACT/ACT_refactor/segmentation_models/hardsmeg/HarD-MSEG-best_PHANTOM_v2.pth",
                 'SEG_MODEL' : "HarDMSEG",
                 'MIN_SUCCESS_FRAMES' : 15,
                 'BUFFER_FRAMES' : 100,
@@ -114,6 +115,36 @@ class LiralabGUIControl:
 
         self.gui.update_image(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
         self.liralabSocket.write("AORTA")
+    
+    def run_aorta_on_human(self):
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
+        
+        self.CHECKPOINT_DIR = self.params['AORTA']['MODEL']
+        self.policy = ACTPolicy.from_pretrained(self.CHECKPOINT_DIR).to(self.device)
+        self.preprocess, self.postprocess = make_pre_post_processors(
+            self.policy.config,
+            self.CHECKPOINT_DIR,
+            preprocessor_overrides={"device_processor": {"device": str(self.device)}},
+        )
+
+        self.lowpass = LowPassFilter(0.5)
+        self.T_initial_0 = None
+        self.T_0_initial = None
+
+        self.cap = cv2.VideoCapture("VideoAorta.mp4")
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        ret, frame = self.cap.read()
+        while frame is None or frame.max() == 0:
+            ret, frame = self.cap.read()
+            time.sleep(0.5)
+        frame = cv2.resize(frame, (640, 360))
+
+        self.gui.update_image(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+        self.liralabSocket.write("AORTA_HUMAN")        
 
     def run_jugular(self):
         self.jugular_datas = []
@@ -258,7 +289,7 @@ class LiralabGUIControl:
     def __run_aorta_grid_control_app(self):
         self.liralabSocket.write("START")
 
-        self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
+        self.segmentator = Segmentator(self.params['AORTA']['SEG_PHANTOM'], self.params['AORTA']['SEG_MODEL'])
         diameters = deque(maxlen=self.params['AORTA']['BUFFER_FRAMES'])
         for i in range(10):
             ret, frame = self.cap.read()                                                            # frame [w, h, 3]            
@@ -325,6 +356,91 @@ class LiralabGUIControl:
                 self.liralabSocket.write(f"{1.0};")
                 return
 
+    def __run_aorta_force_control_app(self):
+        self.liralabSocket.write("START")
+        state = self.liralabSocket.read().split(';')[:-1]
+        self.T_initial_0 = self.get_tran_from_state(state)
+        self.T_0_initial = np.linalg.inv(self.T_initial_0)
+
+        first = True
+        self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
+        diameters = deque(maxlen=self.params['AORTA']['BUFFER_FRAMES'])
+        for i in range(10):
+            ret, frame = self.cap.read()                                                            # frame [w, h, 3]
+
+        above_threshold = 0
+        mean_diameter = 0
+        while(True):
+            #------------------------#
+            # Read state from socket #
+            #------------------------#
+            ee_curr_belly = self.get_current_ee_from_initial()
+
+            if first:
+                first = False
+                start = time.perf_counter()
+                print(">>> START TIMER <<<")
+
+            #--------------------------------#
+            # Capture frame for segmentation #
+            #--------------------------------#
+            frame, mask, diameter = self.get_segmented_frame(self.params['AORTA']['PIXEL_TO_MM'])
+            if frame is None: break
+
+            #-------------------#
+            # Success Condition #
+            #-------------------#
+            diameters.append(diameter)
+
+            if diameter > self.params['AORTA']['MIN_DIAMETER']:
+                above_threshold += 1
+                mean_diameter += diameter
+                if above_threshold >= self.params['AORTA']['FRAME_TO_SUCCESS']:
+                    print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
+                    elapsed = time.perf_counter() - start - 3.2
+                    print(f"Tempo: {elapsed:.2f} s")
+                    self.liralabSocket.write("QUIT")
+                    return
+
+            if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
+
+            frame = self.preprocess_frame(frame) # [3,256,256] float32
+
+            observation = {
+                "observation.images.top": frame,  # (1, 3, H, W) - batch di 1
+                "observation.state": torch.from_numpy(ee_curr_belly).unsqueeze(0).to(self.device),             # (1, 9)
+                "task": "Guide the ultrasound on the abdomen to find and center the aorta."
+            }
+
+            # ----------------------------------------------------------------------
+            # 5. Inferenza
+            # ----------------------------------------------------------------------
+            with torch.no_grad():
+                obs = self.preprocess(observation)          # normalizza e sposta su device
+                action = self.policy.select_action(obs)     # (1, 4) - una azione dal chunk predetto
+                action = self.postprocess(action)[0]           # denormalizza -> unità reali (metri, radianti)
+        
+
+            force_limit = 12 # N
+            action[3] = np.clip(action[3], -force_limit, force_limit)
+            action[3] = self.lowpass.update(action[3])
+
+            eeR = np.eye(3)
+            eeR = np.concatenate([eeR[0],eeR[1],eeR[2]])
+            eeP = action[0:3]
+            ee_new_belly = np.concatenate([eeP,eeR])
+            ee_new_belly = self.get_tran_from_state(ee_new_belly)
+            ee_new_0 = np.dot(self.T_initial_0 , ee_new_belly)
+
+            #-----------------#
+            # Write new state #
+            #-----------------#
+            self.liralabSocket.write(self.force_control_to_string(ee_new_0,action[3]))
+
+            if self.should_quit:
+                self.liralabSocket.write("QUIT")
+                return
+
 class LiralabGUI(tk.Tk):
     def __init__(self, on_start=None, colors=None):
         """colors può sovrascrivere le voci di GUI_COLORS.
@@ -364,17 +480,17 @@ class LiralabGUI(tk.Tk):
         controls = ttk.Frame(self, padding=12)
         controls.grid(row=0, column=0, sticky="ew")
         self._mode_buttons = {}
-        for column, mode in enumerate(("AORTA", "JUGULAR")):
+        for column, mode in enumerate(("AORTA", "JUGULAR", "HUMAN")):
             button = ttk.Button(controls, text=mode, command=lambda value=mode: self.select_mode(value))
             button.grid(row=0, column=column, padx=(0, 8))
             self._mode_buttons[mode] = button
         self.start_button = ttk.Button(controls, text="START", command=self.start)
-        self.start_button.grid(row=0, column=2)
+        self.start_button.grid(row=0, column=3)
         self.start_button.state(["disabled"])
         self.quit_button = ttk.Button(controls, text="QUIT", command=self.request_quit)
-        self.quit_button.grid(row=0, column=3, padx=(8, 0))
+        self.quit_button.grid(row=0, column=4, padx=(8, 0))
         self.quit_button.state(["disabled"])
-        ttk.Label(controls, textvariable=self.mode).grid(row=0, column=4, padx=16)
+        ttk.Label(controls, textvariable=self.mode).grid(row=0, column=5, padx=16)
         #self._mode_buttons["AORTA"].state(["pressed"])
 
         image_frame = ttk.LabelFrame(self, text="Immagine", padding=8)
@@ -505,7 +621,10 @@ class LiralabGUI(tk.Tk):
 
         self.log(f"Modalità selezionata: {mode}")
         def prepare():
-            getattr(self.liralab_GUI_control, f"run_{mode.lower()}")()
+            if mode == "HUMAN":
+                self.liralab_GUI_control.run_aorta_on_human()
+            else:
+                getattr(self.liralab_GUI_control, f"run_{mode.lower()}")()
 
         self._run_background("prepare", prepare)
 
@@ -516,6 +635,10 @@ class LiralabGUI(tk.Tk):
         self.log(f"START: {mode}")
         if self.on_start is not None:
             self._run_background("run", lambda: self.on_start(mode))
+        elif mode == "HUMAN":
+            self._run_background(
+                "run", self.liralab_GUI_control._LiralabGUIControl__run_aorta_force_control_app
+            )
         elif mode == "AORTA":
             self._run_background(
                 "run", self.liralab_GUI_control._LiralabGUIControl__run_aorta_grid_control_app
