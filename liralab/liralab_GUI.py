@@ -98,12 +98,12 @@ class LiralabGUIControl:
         self.cap = None
         self.jugular_datas = []
 
-    def run_aorta(self):
+    def run_aorta(self, is_phantom):
         if self.cap is not None:
             self.cap.release()
             self.cap = None
 
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture("VideoAorta.mp4")
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         
@@ -115,8 +115,9 @@ class LiralabGUIControl:
 
         self.gui.update_image(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
         self.liralabSocket.write("AORTA")
+        self.is_phantom = is_phantom
     
-    def run_aorta_on_human(self):
+    def run_imitation_learning(self):
         if self.cap is not None:
             self.cap.release()
             self.cap = None
@@ -133,7 +134,7 @@ class LiralabGUIControl:
         self.T_initial_0 = None
         self.T_0_initial = None
 
-        self.cap = cv2.VideoCapture("VideoAorta.mp4")
+        self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         
@@ -288,8 +289,11 @@ class LiralabGUIControl:
 
     def __run_aorta_grid_control_app(self):
         self.liralabSocket.write("START")
+        if self.is_phantom:
+            self.segmentator = Segmentator(self.params['AORTA']['SEG_PHANTOM'], self.params['AORTA']['SEG_MODEL'])
+        else:
+            self.segmentator = Segmentator(self.params['AORTA']['SEG'], self.params['AORTA']['SEG_MODEL'])
 
-        self.segmentator = Segmentator(self.params['AORTA']['SEG_PHANTOM'], self.params['AORTA']['SEG_MODEL'])
         diameters = deque(maxlen=self.params['AORTA']['BUFFER_FRAMES'])
         for i in range(10):
             ret, frame = self.cap.read()                                                            # frame [w, h, 3]            
@@ -314,7 +318,7 @@ class LiralabGUIControl:
                     print(f"diametro medio: {mean_diameter:.2f} mm")
                     print(f"tempo: {time.time() - initial_time:.2f} s")
                     self.liralabSocket.write(f"{mean_diameter};")
-                    self.gui.popup(f"Diameter: {mean_diameter}\nTime: {time.time() - initial_time}.")
+                    self.gui.popup(f"Diameter: {mean_diameter:.1f}\nTime: {time.time() - initial_time:.1f}.")
                     return
                 print("Next point...")
                 
@@ -397,9 +401,10 @@ class LiralabGUIControl:
                 mean_diameter += diameter
                 if above_threshold >= self.params['AORTA']['FRAME_TO_SUCCESS']:
                     print(f"MEAN DIAMETER: {mean_diameter/above_threshold:.1f}")
-                    elapsed = time.perf_counter() - start - 3.2
+                    elapsed = time.perf_counter() - start - 1.2
                     print(f"Tempo: {elapsed:.2f} s")
                     self.liralabSocket.write("QUIT")
+                    self.gui.popup(f"Diameter: {mean_diameter/above_threshold:.1f}\nTime: {elapsed:.1f}.")
                     return
 
             if above_threshold % 5 == 0 and above_threshold > 0: print(f"Above: {above_threshold}")
@@ -480,17 +485,19 @@ class LiralabGUI(tk.Tk):
         controls = ttk.Frame(self, padding=12)
         controls.grid(row=0, column=0, sticky="ew")
         self._mode_buttons = {}
-        for column, mode in enumerate(("AORTA", "JUGULAR", "HUMAN")):
-            button = ttk.Button(controls, text=mode, command=lambda value=mode: self.select_mode(value))
+        modes = (("AORTA", "GRID - Phantom"), ("GRID_HUMAN", "GRID - Human"),
+                 ("JUGULAR", "JUGULAR"), ("HUMAN", "Imitation Learning"))
+        for column, (mode, label) in enumerate(modes):
+            button = ttk.Button(controls, text=label, command=lambda value=mode: self.select_mode(value))
             button.grid(row=0, column=column, padx=(0, 8))
             self._mode_buttons[mode] = button
         self.start_button = ttk.Button(controls, text="START", command=self.start)
-        self.start_button.grid(row=0, column=3)
+        self.start_button.grid(row=0, column=len(modes))
         self.start_button.state(["disabled"])
         self.quit_button = ttk.Button(controls, text="QUIT", command=self.request_quit)
-        self.quit_button.grid(row=0, column=4, padx=(8, 0))
+        self.quit_button.grid(row=0, column=len(modes) + 1, padx=(8, 0))
         self.quit_button.state(["disabled"])
-        ttk.Label(controls, textvariable=self.mode).grid(row=0, column=5, padx=16)
+        ttk.Label(controls, textvariable=self.mode).grid(row=0, column=len(modes) + 2, padx=16)
         #self._mode_buttons["AORTA"].state(["pressed"])
 
         image_frame = ttk.LabelFrame(self, text="Immagine", padding=8)
@@ -621,8 +628,10 @@ class LiralabGUI(tk.Tk):
 
         self.log(f"Modalità selezionata: {mode}")
         def prepare():
-            if mode == "HUMAN":
-                self.liralab_GUI_control.run_aorta_on_human()
+            if mode in ("AORTA", "GRID_HUMAN"):
+                self.liralab_GUI_control.run_aorta(is_phantom=mode == "AORTA")
+            elif mode == "HUMAN":
+                self.liralab_GUI_control.run_imitation_learning()
             else:
                 getattr(self.liralab_GUI_control, f"run_{mode.lower()}")()
 
@@ -639,7 +648,7 @@ class LiralabGUI(tk.Tk):
             self._run_background(
                 "run", self.liralab_GUI_control._LiralabGUIControl__run_aorta_force_control_app
             )
-        elif mode == "AORTA":
+        elif mode in ("AORTA", "GRID_HUMAN"):
             self._run_background(
                 "run", self.liralab_GUI_control._LiralabGUIControl__run_aorta_grid_control_app
             )
